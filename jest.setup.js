@@ -7,16 +7,22 @@ process.env.WEBHOOK_SECRET = 'test_webhook_secret';
 process.env.GROQ_API_KEY = process.env.GROQ_API_KEY || 'test-groq-key';
 process.env.DATABASE_URL = 'sqlite://:memory:';
 
-global.MYZUBSTER_API_URL = process.env.MYZUBSTER_API_URL;
-global.MYZUBSTER_API_TOKEN = process.env.MYZUBSTER_API_TOKEN;
+const { sequelize } = require('./server');
 
-// Importa i modelli e sincronizza il database
-const { sequelize } = require('./models');
+let initialized = false;
 
 beforeAll(async () => {
-  await sequelize.sync({ force: true });
+  if (!initialized) {
+    console.log('🔧 Sincronizzazione database per i test...');
+    await sequelize.sync({ force: true });
+    console.log('✅ Database sincronizzato');
+    initialized = true;
+  }
 });
 
 afterAll(async () => {
-  await sequelize.close();
+  if (initialized) {
+    console.log('🧹 Chiusura database...');
+    await sequelize.close();
+  }
 });

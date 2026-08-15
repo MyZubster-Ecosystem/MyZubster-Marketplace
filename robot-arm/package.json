@@ -1,0 +1,22 @@
+{
+  "name": "myzubster-robot-arm",
+  "version": "1.0.0",
+  "description": "Robotic arm for urban gardens - MyZubster",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "nodemon index.js",
+    "test": "jest"
+  },
+  "dependencies": {
+    "express": "^4.18.0",
+    "socket.io": "^4.7.0",
+    "serialport": "^12.0.0",
+    "axios": "^1.6.0",
+    "cors": "^2.8.5"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.0",
+    "jest": "^29.0.0"
+  }
+}

@@ -33,3 +33,8 @@ desktop.ini
 # Docker
 .dockerignore
 *.pid
+# Cache e file grandi
+web-dashboard/node_modules/
+web-dashboard/.cache/
+*.pack
+*.idx

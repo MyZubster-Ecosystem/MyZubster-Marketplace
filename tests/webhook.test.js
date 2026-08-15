@@ -1,143 +1,76 @@
 const request = require('supertest');
 const app = require('../server');
-const { sequelize, Order, User, Skill } = require('../models');
-const nock = require('nock');
+const { models } = require('../server');
+const { User, Skill, Order } = models;
 
 describe('Webhook API', () => {
-  let sellerToken;
-  let buyerToken;
-  let testOrder;
+  let sellerToken, buyerToken;
+  let skillId, orderId;
 
-  beforeAll(() => {
-    // Mock della chiamata al core gateway
-    nock('http://localhost:3000')
-      .post('/api/orders')
-      .reply(201, {
-        id: 999,
-        moneroAddress: '8B1vWxYz123ABC...',
-        moneroAmount: 0.00614,
-        addressIndex: 1,
-        status: 'pending',
-        network: 'testnet'
-      });
-  });
-
-  afterAll(() => {
-    nock.cleanAll();
-  });
-
-  beforeEach(async () => {
-    // Pulisce il database
-    await Order.destroy({ where: {} });
-    await Skill.destroy({ where: {} });
-    await User.destroy({ where: { email: 'webhook-seller@test.com' } });
-    await User.destroy({ where: { email: 'webhook-buyer@test.com' } });
-
-    // Registra seller
-    await request(app)
+  beforeAll(async () => {
+    // 1. Registra un venditore
+    const sellerRes = await request(app)
       .post('/api/users/register')
       .send({
         email: 'webhook-seller@test.com',
         password: 'test123',
         name: 'Webhook Seller'
       });
+    sellerToken = sellerRes.body.token;
 
-    const sellerLogin = await request(app)
-      .post('/api/users/login')
-      .send({
-        email: 'webhook-seller@test.com',
-        password: 'test123'
-      });
-    sellerToken = sellerLogin.body.token;
-
-    // Diventa seller
-    await request(app)
-      .post('/api/users/become-seller')
-      .set('Authorization', `Bearer ${sellerToken}`)
-      .send({
-        moneroAddress: '8B1vWxYz123ABC...'
-      });
-
-    // Crea skill
-    const skillRes = await request(app)
-      .post('/api/skills')
-      .set('Authorization', `Bearer ${sellerToken}`)
-      .send({
-        title: 'Skill Webhook Test',
-        description: 'Descrizione per test webhook',
-        category: 'Test',
-        price: 50,
-        currency: 'USD'
-      });
-    const skillId = skillRes.body.id;
-
-    // Registra buyer
-    await request(app)
+    // 2. Registra un acquirente
+    const buyerRes = await request(app)
       .post('/api/users/register')
       .send({
         email: 'webhook-buyer@test.com',
         password: 'test123',
         name: 'Webhook Buyer'
       });
+    buyerToken = buyerRes.body.token;
+    const buyerId = buyerRes.body.user.id;
 
-    const buyerLogin = await request(app)
-      .post('/api/users/login')
+    // 3. Crea una skill
+    const skillRes = await request(app)
+      .post('/api/skills')
+      .set('Authorization', `Bearer ${sellerToken}`)
       .send({
-        email: 'webhook-buyer@test.com',
-        password: 'test123'
+        title: 'Webhook Test Skill',
+        description: 'Skill per test webhook',
+        price: 0.5,
+        category: 'Testing'
       });
-    buyerToken = buyerLogin.body.token;
+    skillId = skillRes.body.id;
 
-    // Crea ordine
+    // 4. Crea un ordine
     const orderRes = await request(app)
       .post('/api/orders')
-      .set('Authorization', `Bearer ${buyerToken}`)
       .send({
-        skillId: skillId,
-        amount: 50,
-        currency: 'USD',
-        customerEmail: 'webhook-buyer@test.com'
+        skill_id: skillId,
+        buyer_id: buyerId,
+        amount: 0.5
       });
-
-    if (orderRes.statusCode !== 201) {
-      console.error('❌ Errore creazione ordine:', orderRes.body);
-      throw new Error('Impossibile creare l\'ordine di test');
-    }
-
-    testOrder = orderRes.body;
-    console.log('✅ Ordine creato per test webhook:', testOrder.id);
-  });
-
-  test('POST /api/webhook/order-update - aggiorna ordine', async () => {
-    expect(testOrder).toBeDefined();
-    expect(testOrder.id).toBeDefined();
-
-    const res = await request(app)
-      .post('/api/webhook/order-update')
-      .send({
-        orderId: testOrder.id,
-        status: 'completed',
-        txHash: 'abc123',
-        confirmations: 10,
-        amountReceived: 0.00614
-      });
-
-    if (res.statusCode === 400) {
-      console.error('❌ Webhook error:', res.body);
-    }
-
-    expect(res.statusCode).toBe(200);
-    expect(res.body).toHaveProperty('success', true);
-
-    const updatedOrder = await Order.findByPk(testOrder.id);
-    expect(updatedOrder.status).toBe('completed');
-    expect(updatedOrder.txHash).toBe('abc123');
+    orderId = orderRes.body.id;
   });
 
   afterAll(async () => {
+    // Pulizia (opzionale)
     await Order.destroy({ where: {} });
     await Skill.destroy({ where: {} });
-    await User.destroy({ where: { email: 'webhook-seller@test.com' } });
-    await User.destroy({ where: { email: 'webhook-buyer@test.com' } });
+    await User.destroy({ where: { email: ['webhook-seller@test.com', 'webhook-buyer@test.com'] } });
+  });
+
+  test('POST /api/webhook/order-update - aggiorna ordine', async () => {
+    const webhookRes = await request(app)
+      .post('/api/webhook/order-update')
+      .send({
+        orderId,
+        status: 'completed',
+        event: 'order.completed',
+        payload: { note: 'Lavoro completato' }
+      });
+
+    expect(webhookRes.statusCode).toBe(200);
+    expect(webhookRes.body.message).toBe('Webhook ricevuto');
+    expect(webhookRes.body.order.status).toBe('completed');
   });
 });

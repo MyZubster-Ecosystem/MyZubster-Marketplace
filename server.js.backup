@@ -1,199 +1,179 @@
 const express = require('express');
+const mongoose = require('mongoose');
 const cors = require('cors');
-const dotenv = require('dotenv');
-const { Sequelize, DataTypes } = require('sequelize');
-const path = require('path');
-
-// Carica variabili d'ambiente
-dotenv.config();
-
-// ============================================
-// CONFIGURAZIONE
-// ============================================
-
-const PORT = process.env.PORT || 4000;
-const NODE_ENV = process.env.NODE_ENV || 'development';
-
-console.log(`📦 NODE_ENV: ${NODE_ENV}`);
-console.log(`🚪 PORT: ${PORT}`);
-
-// ============================================
-// DATABASE (SQLite)
-// ============================================
-
-const DB_DIALECT = process.env.DB_DIALECT || 'sqlite';
-const DB_STORAGE = process.env.DB_STORAGE || './data/marketplace.sqlite';
-
-// Configurazione Sequelize
-const sequelize = new Sequelize({
-  dialect: DB_DIALECT,
-  storage: DB_STORAGE,
-  logging: NODE_ENV === 'development' ? console.log : false,
-  pool: {
-    max: 5,
-    min: 0,
-    acquire: 30000,
-    idle: 10000
-  }
-});
-
-// ============================================
-// MODELLI
-// ============================================
-
-// Definizione del modello User
-const User = sequelize.define('User', {
-  id: {
-    type: DataTypes.INTEGER,
-    autoIncrement: true,
-    primaryKey: true,
-    allowNull: false
-  },
-  email: {
-    type: DataTypes.STRING,
-    allowNull: false,
-    unique: true,
-    validate: {
-      isEmail: true
-    }
-  },
-  password: {
-    type: DataTypes.STRING,
-    allowNull: false
-  },
-  username: {
-    type: DataTypes.STRING,
-    allowNull: false,
-    unique: true
-  },
-  name: {
-    type: DataTypes.STRING,
-    allowNull: true
-  },
-  role: {
-    type: DataTypes.ENUM('user', 'admin', 'seller'),
-    defaultValue: 'user'
-  },
-  isActive: {
-    type: DataTypes.BOOLEAN,
-    defaultValue: true
-  },
-  moneroAddress: {
-    type: DataTypes.STRING,
-    allowNull: true
-  },
-  pgpPublicKey: {
-    type: DataTypes.TEXT,
-    allowNull: true
-  },
-  location: {
-    type: DataTypes.STRING,
-    allowNull: true
-  },
-  rating: {
-    type: DataTypes.FLOAT,
-    defaultValue: 0
-  }
-}, {
-  timestamps: true,
-  tableName: 'Users'
-});
-
-// ============================================
-// DEFINIZIONE ROUTE
-// ============================================
+const helmet = require('helmet');
 
 const app = express();
+const PORT = process.env.PORT || 4000;
 
 // Middleware
+app.use(helmet());
 app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-console.log('🔍 Caricamento route...');
+// Servi file statici dalla cartella frontend
+app.use(express.static('frontend'));
+
+// Connessione MongoDB
+mongoose.connect('mongodb://localhost:27017/myzubster')
+  .then(() => console.log('✅ MongoDB connesso'))
+  .catch(err => console.error('❌ MongoDB errore:', err));
+
+// ============================================================
+// ROUTE GARDENS - Bounty #743
+// ============================================================
+const gardenRoutes = require('./routes/gardens');
+const exchangeRoutes = require('./routes/exchange');
+const sensorsRoutes = require('./routes/sensors');
+const nfcRoutes = require("./routes/nfc");
+const droneRoutes = require("./routes/drone");
+const selfReplicatingRobotRoutes = require("./routes/selfReplicatingRobot");
+app.use('/api/gardens', gardenRoutes);
+app.use('/api/exchange', exchangeRoutes);
+app.use('/api/sensors', sensorsRoutes);
+app.use('/api/ml', mlRoutes);
+app.use("/api/nfc", nfcRoutes);
+app.use("/api/drone", droneRoutes);
+app.use("/api/self-replicating-robot", selfReplicatingRobotRoutes);
+
+// ============================================================
+// ROUTE SENSORS - Bounty #742
+// ============================================================
+const sensorRoutes = require('./routes/sensors');
+const mlRoutes = require('./routes/ml');
+const mlRoutes = require('./routes/ml');
+app.use('/api/sensors', sensorRoutes);
+app.use('/api/ml', mlRoutes);
+app.use('/api/ml', mlRoutes);
 
 // Health check
 app.get('/api/health', (req, res) => {
-  res.json({
-    status: 'ok',
+app.get('/dashboard-hera', (req, res) => {
+  res.sendFile('/var/www/myzubster.com/public/dashboard-hera.html');
+});
+  res.json({ 
+    status: 'OK', 
     timestamp: new Date().toISOString(),
-    service: 'MyZubster-Marketplace',
-    version: '1.0.0',
-    database: DB_DIALECT
+    message: 'MyZubster Marketplace API - Modalità Gardens'
   });
 });
 
-// Route users
-app.get('/api/users', async (req, res) => {
-  try {
-    const users = await User.findAll({
-      attributes: { exclude: ['password'] }
-    });
-    res.json({ users });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
+// Root
+app.get('/', (req, res) => {
+  res.json({ 
+    message: 'MyZubster Marketplace API', 
+    version: '1.0.0',
+    endpoints: {
+      health: '/api/health',
+      gardens: '/api/gardens',
+      sensors: '/api/sensors',
+      garden_map: '/garden-map.html'
+    }
+  });
 });
 
-app.post('/api/users', async (req, res) => {
-  try {
-    const { email, username, password, name } = req.body;
-    const user = await User.create({ email, username, password, name });
-    res.status(201).json({ user: { id: user.id, email: user.email, username: user.username } });
-  } catch (error) {
-    res.status(400).json({ error: error.message });
-  }
+// Error handler
+app.use((err, req, res, next) => {
+  console.error('❌ Errore:', err.message);
+  res.status(500).json({ error: err.message });
 });
 
-// Route per il gateway (esempio)
-app.get('/api/gateway/status', async (req, res) => {
-  try {
-    const response = await fetch(process.env.GATEWAY_API_URL + '/health');
-    const data = await response.json();
-    res.json({ gateway: data, status: 'connected' });
-  } catch (error) {
-    res.status(503).json({ gateway: 'unreachable', error: error.message });
-  }
+// Avvia server
+app.listen(PORT, () => {
+  console.log(`🚀 Server avviato sulla porta ${PORT}`);
+  console.log(`🌐 URL: http://localhost:${PORT}`);
+  console.log(`🔍 Health check: http://localhost:${PORT}/api/health`);
+  console.log(`🗺️  Mappa: http://localhost:${PORT}/garden-map.html`);
+  console.log(`🌱 Gardens API: http://localhost:${PORT}/api/gardens`);
+  console.log(`📡 Sensors API: http://localhost:${PORT}/api/sensors`);
+  console.log('✅ Gardens routes loaded');
+  console.log('✅ Sensors routes loaded');
+  console.log('✅ Frontend servito da /frontend');
 });
 
-console.log('✅ Tutte le route caricate');
+module.exports = app;
 
-// ============================================
-// AVVIO SERVER
-// ============================================
+// Endpoint per robot - riceve job dai robot
+app.post('/api/robot/assign', (req, res) => {
+  const { robotId, jobId, clientId, amount, currency, description, location } = req.body;
+  
+  if (!robotId || !jobId || !clientId || !amount) {
+    return res.status(400).json({ error: 'robotId, jobId, clientId and amount are required' });
+  }
 
-async function startServer() {
-  try {
-    // Sincronizza il database (force: true per reset in produzione)
-    // In produzione, usa { force: false } per non perdere dati
-    const syncOptions = NODE_ENV === 'production' ? { force: false } : { force: true };
+  // Crea un job nel sistema
+  const job = {
+    id: jobId,
+    robotId,
+    clientId,
+    amount,
+    currency: currency || 'MYZ',
+    description: description || 'Pulizia urbana',
+    location: location || 'Rimini',
+    status: 'assigned',
+    createdAt: new Date().toISOString()
+  };
+
+  // Qui si potrebbe salvare nel database
+
+  res.json({
+    success: true,
+    message: 'Job assegnato con successo',
+    job
+  });
+});
+
+// Root route - redirect al frontend o mostra stato
+app.get('/', (req, res) => {
+  res.json({
+    message: 'MyZubster Marketplace API',
+    version: '1.0.0',
+    status: 'online',
+    endpoints: {
+      health: '/api/health',
+      gardens: '/api/gardens',
+      sensors: '/api/sensors',
+      map: '/garden-map.html'
+    },
+    onion: 'http://auxfvwqi6zzerjmhmqqzbdppemwqpv7z4pe5fwcrlovnlr6pzt7ggjyd.onion'
+  });
+});
+
+// WebSocket per dati real-time
+const WebSocket = require('ws');
+const wss = new WebSocket.Server({ port: 4001 });
+
+wss.on('connection', (ws) => {
+    console.log('🟢 WebSocket client connected');
     
-    await sequelize.sync(syncOptions);
-    console.log('✅ Connessione database stabilita');
-
-    app.listen(PORT, () => {
-      console.log(`🚀 Server avviato sulla porta ${PORT}`);
-      console.log(`🌐 URL: http://localhost:${PORT}`);
-      console.log(`🔍 Health check: http://localhost:${PORT}/api/health`);
-      console.log(`👥 Users: http://localhost:${PORT}/api/users`);
+    ws.on('message', (message) => {
+        try {
+            const data = JSON.parse(message);
+            if (data.action === 'subscribe' && data.gardenId) {
+                ws.gardenId = data.gardenId;
+                console.log(`📡 Client subscribed to garden: ${data.gardenId}`);
+            }
+        } catch (e) {
+            console.error('WebSocket error:', e);
+        }
     });
-
-  } catch (error) {
-    console.error('❌ Errore avvio server:', error);
-    process.exit(1);
-  }
-}
-
-// Gestione errori non catturati
-process.on('uncaughtException', (err) => {
-  console.error('❌ UNCAUGHT EXCEPTION:', err);
+    
+    ws.on('close', () => {
+        console.log('🔴 WebSocket client disconnected');
+    });
 });
 
-process.on('unhandledRejection', (reason, promise) => {
-  console.error('❌ UNHANDLED REJECTION:', reason);
-});
-
-// Avvia il server
-startServer();
-
-module.exports = { app, sequelize, User };
+// Broadcast sensor data to subscribers
+global.broadcastSensorData = (gardenId, sensorData) => {
+    wss.clients.forEach((client) => {
+        if (client.readyState === WebSocket.OPEN && client.gardenId === gardenId) {
+            client.send(JSON.stringify({
+                type: 'sensor_update',
+                gardenId: gardenId,
+                data: sensorData,
+                timestamp: new Date().toISOString()
+            }));
+        }
+    });
+};
