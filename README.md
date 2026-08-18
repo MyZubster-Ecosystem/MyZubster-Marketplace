@@ -1,38 +1,68 @@
-# MyZubster Marketplace - EVA IONI Integration
+# MyZubster Marketplace
 
-## Panoramica
-API per la gestione degli orti urbani e dei sensori Arduino.
+Marketplace/service repository in the MyZubster ecosystem, currently containing garden and sensor-oriented API work plus historical bounty-linked development.
 
-## Moduli Completati
+## Status
 
-### 1. Mappa Orti Urbani (Bounty #743)
-- Mappa interattiva con Leaflet.js
-- Geolocalizzazione endpoint /nearby
-- CRUD completo per orti
+**Development / active validation.** Implemented endpoints and tests should be verified from the current source tree before production use.
 
-### 2. API Arduino pH/EC (Bounty #742)
-- Ricezione dati da sensori
-- Statistiche in tempo reale
-- Simulatore Arduino per test
+Historical bounty labels or amounts in issues/commits are records of project intent/work tracking. They are **not proof that an external XMR/MYZ settlement occurred**.
 
-## API Endpoint
+## Current API areas
 
 ### Gardens
-GET    /api/gardens              - Lista tutti gli orti
-GET    /api/gardens/:id          - Dettaglio orto
-GET    /api/gardens/nearby       - Orti vicini
-POST   /api/gardens              - Crea nuovo orto
-PUT    /api/gardens/:id          - Aggiorna orto
-DELETE /api/gardens/:id          - Elimina orto
+
+```text
+GET    /api/gardens
+GET    /api/gardens/:id
+GET    /api/gardens/nearby
+POST   /api/gardens
+PUT    /api/gardens/:id
+DELETE /api/gardens/:id
+```
 
 ### Sensors
-POST   /api/sensors/data         - Invia dati sensore
-GET    /api/sensors/garden/:id   - Storico dati
-GET    /api/sensors/garden/:id/latest - Ultima lettura
-GET    /api/sensors/garden/:id/stats - Statistiche
 
-## Bounty Completate
-| # | Descrizione | Guadagno | Stato |
-|---|-------------|----------|-------|
-| 742 | API Arduino pH/EC | 0.08 XMR | ✅ |
-| 743 | Mappa Orti Urbani | 0.06 XMR | ✅ |
+```text
+POST /api/sensors/data
+GET  /api/sensors/garden/:id
+GET  /api/sensors/garden/:id/latest
+GET  /api/sensors/garden/:id/stats
+```
+
+Treat this list as a repository overview; verify the actual router/controller implementation and tests when integrating.
+
+## Bounty history
+
+Some features originated from bounty-labelled work, including garden map and Arduino pH/EC tasks. A feature being implemented or merged does not establish that the associated reward was externally paid.
+
+Current bounty rules are centralized here:
+
+- [MyZubster Bounty System](https://github.com/MyZubster-Ecosystem/myzubster/blob/main/BOUNTIES.md)
+- [Ecosystem Architecture](https://github.com/MyZubster-Ecosystem/myzubster/blob/main/docs/ECOSYSTEM.md)
+
+MYZ in the current core platform is an internal reward/accounting ledger. Any external XMR/token settlement requires independently verifiable payment evidence before it can be represented as `PAID`.
+
+See `BOUNTIES.md` in this repository for Marketplace-specific bounty scope.
+
+## Development
+
+Use the package scripts present in the repository. A normal Node.js workflow is:
+
+```bash
+npm ci
+npm test
+```
+
+Check `.env.example` and the actual package scripts before starting services. Do not commit secrets or production credentials.
+
+## Security
+
+Sensor/garden APIs should validate authentication, authorization, input ranges and ownership boundaries where applicable. External payment/provider integrations must fail closed and must not self-declare settlement finality.
+
+## Related repositories
+
+- [myzubster](https://github.com/MyZubster-Ecosystem/myzubster) — core ecosystem
+- [MyZubsterGateway](https://github.com/MyZubster-Ecosystem/MyZubsterGateway) — integration/settlement boundary
+- [MyZubster-App](https://github.com/MyZubster-Ecosystem/MyZubster-App) — client application
+- [myzubster-docs](https://github.com/MyZubster-Ecosystem/myzubster-docs) — documentation hub
