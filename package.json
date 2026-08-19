@@ -5,8 +5,8 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "test": "echo '✅ Tests passed' && exit 0",
-    "build": "echo '✅ Build completed' && exit 0"
+    "test": "node --test tests/*.test.js",
+    "build": "node --check server.js"
   },
   "dependencies": {
     "@serialport/parser-readline": "^13.0.0",
