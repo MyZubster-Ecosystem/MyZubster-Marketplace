@@ -1,33 +1,47 @@
+const {
+  protectGardenLocation,
+  publicGarden
+} = require('./locationPrivacyService');
+
 class GardenMapService {
   constructor() {
     this.gardens = [];
   }
 
   // Aggiungi orto
-  addGarden(data) {
+  addGarden(data, userId) {
+    const protectedLocation = protectGardenLocation(data);
     const garden = {
       id: `GARDEN-${Date.now()}`,
       name: data.name,
-      location: {
-        lat: data.lat || 44.0678,
-        lng: data.lng || 12.5695
-      },
-      address: data.address || 'Rimini, Italy',
-      size: data.size || 50,
-      crops: data.crops || ['pomodori', 'basilico'],
+      location: protectedLocation.publicLocation,
+      address: protectedLocation.publicAddress,
+      comune: protectedLocation.publicCity,
+      country: protectedLocation.publicCountry,
+      locationVisibility: protectedLocation.locationVisibility,
+      locationPrecision: protectedLocation.locationPrecision,
+      locationConsentVersion: protectedLocation.locationConsentVersion,
+      locationConsentedAt: protectedLocation.locationConsentedAt,
+      privateLocation: protectedLocation.privateLocation,
+      isPublic: data.isPublic === true,
+      userId: String(userId),
+      size: data.size || 0,
+      crops: Array.isArray(data.crops) ? data.crops : [],
       status: 'active',
       createdAt: new Date()
     };
     this.gardens.push(garden);
-    return garden;
+    return publicGarden(garden);
   }
 
   // Ottieni orti vicini
   getNearbyGardens(lat, lng, radius = 10) {
     return this.gardens.filter(g => {
-      const distance = this.calculateDistance(lat, lng, g.location.lat, g.location.lng);
+      if (g.isPublic !== true || !g.location || !Array.isArray(g.location.coordinates)) return false;
+      const [gardenLng, gardenLat] = g.location.coordinates;
+      const distance = this.calculateDistance(lat, lng, gardenLat, gardenLng);
       return distance <= radius;
-    });
+    }).map(publicGarden);
   }
 
   // Calcola distanza (km)
