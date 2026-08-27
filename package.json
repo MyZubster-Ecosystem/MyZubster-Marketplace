@@ -6,6 +6,8 @@
   "scripts": {
     "start": "node server.js",
     "test": "echo '✅ Tests passed' && exit 0",
+    "privacy:test": "node --test tests/locationPrivacy.test.js",
+    "privacy:migrate-locations": "node scripts/migrate-private-garden-locations.js",
     "build": "echo '✅ Build completed' && exit 0"
   },
   "dependencies": {

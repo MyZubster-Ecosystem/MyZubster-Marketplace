@@ -1,29 +1,40 @@
-// Versione semplificata - senza dipendenze esterne
+const crypto = require('crypto');
+const { nftLocationMetadata } = require('./locationPrivacyService');
+
 class NFTService {
-    constructor() {
-        console.log('✅ NFT Service initialized (simplified)');
+  constructor() {
+    this.mode = process.env.NFT_MINT_MODE || 'disabled';
+  }
+
+  async mintNFT(garden) {
+    if (this.mode !== 'simulation') {
+      const error = new Error('On-chain NFT runtime is not configured');
+      error.code = 'NFT_RUNTIME_NOT_CONFIGURED';
+      throw error;
     }
 
-    async mintNFT(garden, user) {
-        const tokenId = Math.floor(Math.random() * 1000000) + 1;
-        console.log(`🎨 Minted NFT for garden ${garden.name}: tokenId ${tokenId}`);
-        return tokenId;
-    }
+    return {
+      tokenId: crypto.randomInt(1, 2147483647),
+      state: 'simulated',
+      onChain: false,
+      location: nftLocationMetadata(garden)
+    };
+  }
 
-    async getGardenNFT(tokenId) {
-        return {
-            tokenId,
-            owner: '0x0000000000000000000000000000000000000000',
-            garden: {
-                name: 'Orto NFT',
-                location: '44.0678,12.5695',
-                size: 100,
-                cropType: 'pomodori, basilico',
-                price: 0.01
-            },
-            price: 0.01
-        };
-    }
+  async getGardenNFT(garden) {
+    if (!garden || !garden.tokenId) return null;
+    return {
+      tokenId: garden.tokenId,
+      state: garden.nftState || 'none',
+      onChain: garden.nftState === 'minted',
+      garden: {
+        name: garden.name,
+        location: nftLocationMetadata(garden),
+        size: garden.size,
+        crops: garden.crops
+      }
+    };
+  }
 }
 
 module.exports = new NFTService();
