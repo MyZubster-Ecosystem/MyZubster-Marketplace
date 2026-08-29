@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   remediate-and-test:
@@ -34,6 +34,17 @@ jobs:
           node -e "const a=require('./npm-audit.json'); const v=a.metadata?.vulnerabilities||{}; console.log(v); if ((v.critical||0)>0) process.exit(2)"
       - name: Verify tar version
         run: npm ls tar --all
+      - name: Commit regenerated lockfile when changed
+        run: |
+          if git diff --quiet -- package-lock.json; then
+            echo "package-lock.json already reconciled"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add package-lock.json
+          git commit -m "security: reconcile lockfile with patched tar override"
+          git push
       - name: Upload remediation evidence
         uses: actions/upload-artifact@v4
         with:
