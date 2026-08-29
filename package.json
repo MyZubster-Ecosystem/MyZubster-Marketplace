@@ -32,7 +32,7 @@
   },
   "overrides": {
     "tar": "7.5.22",
-    "ws": "$ws",
+    "ws": "8.21.3",
     "ip-address": "10.3.1",
     "@coinbase/wallet-sdk": "4.3.7",
     "thirdweb": "5.121.1"
