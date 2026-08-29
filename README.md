@@ -14,6 +14,8 @@ Marketplace/service repository in the MyZubster ecosystem, currently containing 
 
 **Development / active validation.** Implemented endpoints and tests should be verified from the current source tree before production use.
 
+Payment, payout, subscription renewal and settlement endpoints are fail-closed. They require an authenticated user and a ready MongoDB connection. Until an independent settlement provider is configured, the API may create only unverified payment intents and must not emit synthetic transaction IDs or report external settlement as completed.
+
 Historical bounty labels or amounts in issues/commits are records of project intent/work tracking. They are **not proof that an external XMR/MYZ settlement occurred**.
 
 ## Current API areas
@@ -60,6 +62,7 @@ Use the package scripts present in the repository. A normal Node.js workflow is:
 ```bash
 npm ci
 npm test
+npm audit --audit-level=high
 ```
 
 Check `.env.example` and the actual package scripts before starting services. Do not commit secrets or production credentials.
@@ -67,6 +70,8 @@ Check `.env.example` and the actual package scripts before starting services. Do
 ## Security
 
 Sensor/garden APIs should validate authentication, authorization, input ranges and ownership boundaries where applicable. External payment/provider integrations must fail closed and must not self-declare settlement finality.
+
+`GET /api/health` is a liveness check. `GET /api/ready` returns HTTP `503` until MongoDB is connected. Deployments should route traffic to authentication and payment endpoints only when readiness is green.
 
 ## Related repositories
 

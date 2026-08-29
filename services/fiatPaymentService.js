@@ -1,6 +1,8 @@
+const crypto = require('crypto');
+const PaymentIntent = require('../models/PaymentIntent');
+
 class FiatPaymentService {
   constructor() {
-    this.payments = [];
     this.rates = {
       EUR: 1,
       USD: 1.08,
@@ -8,18 +10,46 @@ class FiatPaymentService {
     };
   }
 
-  createPayment(data) {
-    const payment = {
-      id: `FIAT-${Date.now()}`,
+  buildPaymentIntent(data, userId) {
+    return {
+      id: `FIAT-${crypto.randomUUID()}`,
+      rail: 'fiat',
       amount: data.amount,
-      currency: data.currency || 'EUR',
+      currency: data.currency,
       recipient: data.recipient,
-      method: data.method || 'bank_transfer',
-      status: 'pending',
-      createdAt: new Date()
+      requestedBy: userId,
+      method: 'external_provider_required',
+      status: 'awaiting_external_payment',
+      verificationStatus: 'unverified',
+      createdAt: new Date().toISOString()
     };
-    this.payments.push(payment);
-    return payment;
+  }
+
+  async createPaymentIntent(data, userId) {
+    const intent = this.buildPaymentIntent(data, userId);
+    const stored = await PaymentIntent.create({
+      intentId: intent.id,
+      rail: intent.rail,
+      requestedBy: intent.requestedBy,
+      amount: intent.amount,
+      currency: intent.currency,
+      recipient: intent.recipient,
+      method: intent.method,
+      status: intent.status,
+      verificationStatus: intent.verificationStatus
+    });
+    return {
+      id: stored.intentId,
+      rail: stored.rail,
+      amount: stored.amount,
+      currency: stored.currency,
+      recipient: stored.recipient,
+      requestedBy: stored.requestedBy,
+      method: stored.method,
+      status: stored.status,
+      verificationStatus: stored.verificationStatus,
+      createdAt: stored.createdAt.toISOString()
+    };
   }
 
   convert(amount, from, to) {
@@ -27,15 +57,16 @@ class FiatPaymentService {
     return eurAmount * this.rates[to];
   }
 
-  getStats() {
+  async getStats(userId) {
+    const [total, awaitingExternalPayment, verified] = await Promise.all([
+      PaymentIntent.countDocuments({ requestedBy: userId, rail: 'fiat' }),
+      PaymentIntent.countDocuments({ requestedBy: userId, rail: 'fiat', status: 'awaiting_external_payment' }),
+      PaymentIntent.countDocuments({ requestedBy: userId, rail: 'fiat', verificationStatus: 'verified' })
+    ]);
     return {
-      total: this.payments.length,
-      pending: this.payments.filter(p => p.status === 'pending').length,
-      byCurrency: {
-        EUR: this.payments.filter(p => p.currency === 'EUR').length,
-        USD: this.payments.filter(p => p.currency === 'USD').length,
-        GBP: this.payments.filter(p => p.currency === 'GBP').length
-      }
+      total,
+      awaitingExternalPayment,
+      verified
     };
   }
 }

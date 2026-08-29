@@ -5,10 +5,11 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "test": "echo '✅ Tests passed' && exit 0",
+    "lint": "node scripts/check-js-syntax.js",
+    "test": "node --test tests/readiness.node.test.js tests/locationPrivacy.test.js",
     "privacy:test": "node --test tests/locationPrivacy.test.js",
     "privacy:migrate-locations": "node scripts/migrate-private-garden-locations.js",
-    "build": "echo '✅ Build completed' && exit 0"
+    "build": "npm run lint"
   },
   "dependencies": {
     "@serialport/parser-readline": "^13.0.0",

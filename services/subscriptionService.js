@@ -1,3 +1,5 @@
+const crypto = require('crypto');
+
 class SubscriptionService {
   constructor() {
     this.subscriptions = [];
@@ -6,13 +8,14 @@ class SubscriptionService {
   // Crea abbonamento
   createSubscription(data) {
     const subscription = {
-      id: `SUB-${Date.now()}`,
+      id: `SUB-${crypto.randomUUID()}`,
       name: data.name || 'Subscription',
-      amount: data.amount || 0.01,
-      currency: data.currency || 'XMR',
+      amount: data.amount,
+      currency: data.currency,
       interval: data.interval || 'monthly',
       nextPayment: this.calculateNextPayment(data.interval),
-      status: 'active',
+      status: 'awaiting_external_payment',
+      verificationStatus: 'unverified',
       subscriber: data.subscriber,
       createdAt: new Date()
     };
@@ -34,24 +37,16 @@ class SubscriptionService {
 
   // Processa rinnovi
   processRenewals() {
-    const now = new Date();
-    let processed = 0;
-    
-    this.subscriptions.forEach(sub => {
-      if (sub.status === 'active' && new Date(sub.nextPayment) <= now) {
-        sub.lastPayment = new Date();
-        sub.nextPayment = this.calculateNextPayment(sub.interval);
-        processed++;
-      }
-    });
-    
-    return processed;
+    const error = new Error('Independent settlement provider is not configured');
+    error.code = 'SETTLEMENT_PROVIDER_NOT_CONFIGURED';
+    throw error;
   }
 
   getStats() {
     return {
       total: this.subscriptions.length,
       active: this.subscriptions.filter(s => s.status === 'active').length,
+      awaitingExternalPayment: this.subscriptions.filter(s => s.status === 'awaiting_external_payment').length,
       byInterval: {
         daily: this.subscriptions.filter(s => s.interval === 'daily').length,
         weekly: this.subscriptions.filter(s => s.interval === 'weekly').length,
@@ -59,6 +54,10 @@ class SubscriptionService {
         yearly: this.subscriptions.filter(s => s.interval === 'yearly').length
       }
     };
+  }
+
+  resetForTests() {
+    if (process.env.NODE_ENV === 'test') this.subscriptions = [];
   }
 }
 
