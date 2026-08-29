@@ -1,0 +1,58 @@
+name: Security Thirdweb HIGH Remediation
+
+on:
+  push:
+    branches: [security/marketplace-thirdweb-high-remediation]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  remediate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: security/marketplace-thirdweb-high-remediation
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+      - name: Regenerate exact lockfile
+        run: npm install --package-lock-only --ignore-scripts
+      - name: Install exact tree
+        run: npm ci --ignore-scripts
+      - name: Tests
+        run: |
+          npm test
+          npm run privacy:test
+      - name: Audit
+        run: |
+          npm audit --json > npm-audit.json || true
+          npm ls @coinbase/wallet-sdk thirdweb @thirdweb-dev/sdk --all
+          node - <<'NODE'
+          const fs=require('fs');
+          const a=JSON.parse(fs.readFileSync('npm-audit.json','utf8'));
+          const v=a.metadata?.vulnerabilities||{};
+          console.log('VULNERABILITIES', v);
+          if ((v.critical||0)>0 || (v.high||0)>0) process.exit(2);
+          NODE
+      - name: Persist lockfile if changed
+        if: always()
+        run: |
+          if ! git diff --quiet package-lock.json; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add package-lock.json
+            git commit -m "security: refresh lockfile for thirdweb HIGH remediation"
+            git push
+          fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: marketplace-thirdweb-high-remediation-evidence
+          path: |
+            package-lock.json
+            npm-audit.json
