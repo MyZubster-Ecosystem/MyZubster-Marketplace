@@ -28,11 +28,14 @@
     "node-fetch": "^3.3.2",
     "serialport": "^13.0.0",
     "simple-statistics": "^7.9.3",
-    "ws": "^8.21.2"
+    "ws": "8.21.3"
   },
   "overrides": {
     "tar": "7.5.22",
-    "ws": "$ws",
-    "ip-address": "10.3.1"
+    "ws": "8.21.3",
+    "ip-address": "10.3.1",
+    "@coinbase/wallet-sdk": "4.3.7",
+    "thirdweb": "5.89.0",
+    "lodash": "4.18.0"
   }
 }
