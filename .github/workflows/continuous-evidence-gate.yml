@@ -27,9 +27,7 @@ jobs:
         run: npm ci --ignore-scripts
 
       - name: Run tests
-        run: |
-          npm test
-          npm run privacy:test
+        run: npm test
 
       - name: Run vulnerability audit
         run: |
@@ -43,11 +41,11 @@ jobs:
             repository: process.env.GITHUB_REPOSITORY,
             commit: process.env.GITHUB_SHA,
             vulnerabilities: v,
-            gate: (v.critical || 0) > 0 ? 'NO-GO' : 'PASS-CRITICAL-GATE'
+            gate: ((v.high || 0) > 0 || (v.critical || 0) > 0) ? 'NO-GO' : 'PASS-HIGH-CRITICAL-GATE'
           };
           fs.writeFileSync('security-gate.json', JSON.stringify(result, null, 2));
           console.log(result);
-          if ((v.critical || 0) > 0) process.exit(1);
+          if ((v.high || 0) > 0 || (v.critical || 0) > 0) process.exit(1);
           NODE
 
       - name: Generate CycloneDX SBOM

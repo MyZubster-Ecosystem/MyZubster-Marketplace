@@ -1,10 +1,24 @@
 const express = require('express');
 const router = express.Router();
+const authenticate = require('../middleware/auth');
+const { requireDatabaseReady } = require('../middleware/databaseReady');
+
+router.use(authenticate, requireDatabaseReady);
+
+function validatedUsage(body) {
+  const messageSize = Number(body?.messageSize);
+  const hops = Number(body?.hops);
+  if (!Number.isInteger(messageSize) || messageSize < 0 || messageSize > 10_000_000) return null;
+  if (!Number.isInteger(hops) || hops < 0 || hops > 10_000) return null;
+  return { messageSize, hops };
+}
 
 // Calculate payment
 router.post('/calculate', async (req, res) => {
   try {
-    const { messageSize, hops } = req.body;
+    const usage = validatedUsage(req.body);
+    if (!usage) return res.status(400).json({ error: 'Valid messageSize and hops are required' });
+    const { messageSize, hops } = usage;
     
     const rate = 0.001; // MYZ per messaggio
     const hopBonus = 0.0005; // MYZ per hop
@@ -27,25 +41,10 @@ router.post('/calculate', async (req, res) => {
 
 // Process payment
 router.post('/process', async (req, res) => {
-  try {
-    const { sourceId, targetId, messageSize, hops } = req.body;
-    const total = (messageSize * 0.001) + (hops * 0.0005);
-    
-    res.json({ 
-      success: true, 
-      data: { 
-        transactionId: `tx_${Date.now()}`,
-        source: sourceId,
-        target: targetId,
-        amount: Math.round(total * 1000) / 1000,
-        currency: 'MYZ',
-        status: 'completed',
-        timestamp: new Date().toISOString()
-      } 
-    });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
+  return res.status(503).json({
+    error: 'Independent settlement provider is not configured',
+    code: 'SETTLEMENT_PROVIDER_NOT_CONFIGURED'
+  });
 });
 
 // Get earnings

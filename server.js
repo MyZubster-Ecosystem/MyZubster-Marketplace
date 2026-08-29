@@ -2,6 +2,9 @@ const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
 const path = require('path');
+const { isDatabaseReady } = require('./middleware/databaseReady');
+
+mongoose.set('bufferCommands', false);
 
 const app = express();
 
@@ -74,9 +77,20 @@ app.use('/api/urban-cleaning', urbanCleaningRoutes);
 // Health check
 app.get('/api/health', (req, res) => {
     res.json({
-        status: 'OK',
+        status: 'ok',
+        service: 'MyZubster-Marketplace',
+        database: isDatabaseReady() ? 'ready' : 'unavailable',
         timestamp: new Date().toISOString(),
         message: 'MyZubster Marketplace API'
+    });
+});
+
+app.get('/api/ready', (req, res) => {
+    const ready = isDatabaseReady();
+    return res.status(ready ? 200 : 503).json({
+        status: ready ? 'ready' : 'not_ready',
+        service: 'MyZubster-Marketplace',
+        database: ready ? 'ready' : 'unavailable'
     });
 });
 
@@ -157,35 +171,36 @@ function setupWebSocket(server) {
     }
 }
 
-// Avvia server
 const PORT = process.env.PORT || 4000;
 
-mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/myzubster')
-    .then(() => {
-        console.log('✅ MongoDB connesso');
-        const server = app.listen(PORT, '0.0.0.0', () => {
-            console.log(`🚀 Server avviato sulla porta ${PORT}`);
-            console.log(`🌐 URL: http://localhost:${PORT}`);
-            console.log(`🔍 Health: http://localhost:${PORT}/api/health`);
-            console.log(`🔐 Auth: http://localhost:${PORT}/api/auth`);
-            console.log(`🌱 Gardens: http://localhost:${PORT}/api/gardens`);
-            console.log(`📡 Sensors: http://localhost:${PORT}/api/sensors`);
-            console.log(`🌿 Exchange: http://localhost:${PORT}/api/exchange`);
-            console.log(`🧠 ML: http://localhost:${PORT}/api/ml`);
-            console.log(`🦋 Fauna: http://localhost:${PORT}/api/fauna`);
-            console.log(`💎 Payout: http://localhost:${PORT}/api/payout`);
-            console.log(`🎨 NFT: http://localhost:${PORT}/api/nft`);
-            console.log(`📡 Antenna: http://localhost:${PORT}/api/antenna`);
-            console.log(`🔁 Repeater: http://localhost:${PORT}/api/repeater`);
-            console.log(`💰 Repeater Payment: http://localhost:${PORT}/api/repeater-payment`);
-            console.log(`✅ Tutte le route caricate!`);
-        });
-        setupWebSocket(server);
-    })
-    .catch(err => {
-        console.error('❌ Errore DB:', err.message);
-        const server = app.listen(PORT, '0.0.0.0', () => {
-            console.log(`🚀 Server avviato sulla porta ${PORT} (senza DB)`);
-        });
-        setupWebSocket(server);
+async function startServer(options = {}) {
+    const port = options.port || PORT;
+    const mongoUri = options.mongoUri || process.env.MONGODB_URI || 'mongodb://localhost:27017/myzubster';
+    const serverSelectionTimeoutMS = Number(process.env.MONGODB_SERVER_SELECTION_TIMEOUT_MS || 5000);
+
+    const server = app.listen(port, '0.0.0.0', () => {
+        console.log(`🚀 Server avviato sulla porta ${port}`);
+        console.log(`🔍 Liveness: http://localhost:${port}/api/health`);
+        console.log(`✅ Readiness: http://localhost:${port}/api/ready`);
     });
+    setupWebSocket(server);
+
+    try {
+        await mongoose.connect(mongoUri, { serverSelectionTimeoutMS });
+        console.log('✅ MongoDB connesso');
+    } catch (error) {
+        console.error('❌ MongoDB non disponibile; auth e pagamenti restano bloccati:', error.message);
+    }
+
+    return server;
+}
+
+if (require.main === module) {
+    startServer().catch(error => {
+        console.error('❌ Avvio server fallito:', error.message);
+        process.exitCode = 1;
+    });
+}
+
+module.exports = app;
+module.exports.startServer = startServer;

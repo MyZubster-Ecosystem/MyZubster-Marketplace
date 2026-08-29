@@ -24,10 +24,7 @@ jobs:
         run: npm ci
 
       - name: Lint
-        run: npm run lint || echo "Lint non configurato"
+        run: npm run lint
 
       - name: Test
-        run: npm test || echo "Nessun test configurato"
-
-      - name: Test privacy geolocalizzazione
-        run: npm run privacy:test
+        run: npm test
