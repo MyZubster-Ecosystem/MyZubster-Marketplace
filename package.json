@@ -29,5 +29,8 @@
     "serialport": "^13.0.0",
     "simple-statistics": "^7.9.3",
     "ws": "^8.21.2"
+  },
+  "overrides": {
+    "tar": "7.5.22"
   }
 }
