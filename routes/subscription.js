@@ -6,14 +6,22 @@ const { requireDatabaseReady } = require('../middleware/databaseReady');
 const {
   CRYPTO_CURRENCIES,
   normalizeCurrency,
+  normalizePaymentAmount,
   normalizeRecipient,
-  parsePositiveAmount
 } = require('../middleware/paymentValidation');
 
 router.use(authenticate, requireDatabaseReady);
 
-router.post('/create', (req, res) => {
-  const amount = parsePositiveAmount(req.body?.amount);
+function handleServiceError(res, error) {
+  if (error.code === 'SETTLEMENT_PROVIDER_NOT_CONFIGURED') {
+    return res.status(503).json({ error: error.message, code: error.code });
+  }
+  console.error('Subscription storage failed:', error.message);
+  return res.status(503).json({ error: 'Subscription storage unavailable', code: 'PAYMENT_STORAGE_UNAVAILABLE' });
+}
+
+router.post('/create', async (req, res) => {
+  const amount = normalizePaymentAmount(req.body?.amount);
   const currency = normalizeCurrency(req.body?.currency, CRYPTO_CURRENCIES);
   const subscriber = normalizeRecipient(req.body?.subscriber);
   const intervals = new Set(['daily', 'weekly', 'monthly', 'yearly']);
@@ -24,28 +32,35 @@ router.post('/create', (req, res) => {
   }
 
   const name = typeof req.body?.name === 'string' ? req.body.name.trim().slice(0, 100) : 'Subscription';
-  const subscription = SubscriptionService.createSubscription({
-    amount,
-    currency,
-    subscriber,
-    interval,
-    name: name || 'Subscription'
-  });
-  return res.status(202).json({ success: true, data: subscription });
+  try {
+    const subscription = await SubscriptionService.createSubscription({
+      amount,
+      currency,
+      subscriber,
+      interval,
+      name: name || 'Subscription'
+    }, req.user.id);
+    return res.status(202).json({ success: true, data: subscription });
+  } catch (error) {
+    return handleServiceError(res, error);
+  }
 });
 
 router.post('/renew', (req, res) => {
   try {
-    const processed = SubscriptionService.processRenewals();
+    const processed = SubscriptionService.processRenewals(req.user.id);
     return res.json({ success: true, data: { processed } });
   } catch (error) {
-    const status = error.code === 'SETTLEMENT_PROVIDER_NOT_CONFIGURED' ? 503 : 500;
-    return res.status(status).json({ error: error.message, code: error.code });
+    return handleServiceError(res, error);
   }
 });
 
-router.get('/stats', (req, res) => {
-  res.json({ success: true, data: SubscriptionService.getStats() });
+router.get('/stats', async (req, res) => {
+  try {
+    return res.json({ success: true, data: await SubscriptionService.getStats(req.user.id) });
+  } catch (error) {
+    return handleServiceError(res, error);
+  }
 });
 
 module.exports = router;

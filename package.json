@@ -6,7 +6,7 @@
   "scripts": {
     "start": "node server.js",
     "lint": "node scripts/check-js-syntax.js",
-    "test": "node --test tests/readiness.node.test.js tests/locationPrivacy.test.js",
+    "test": "node --test tests/readiness.node.test.js tests/paymentPersistence.node.test.js tests/locationPrivacy.test.js",
     "privacy:test": "node --test tests/locationPrivacy.test.js",
     "privacy:migrate-locations": "node scripts/migrate-private-garden-locations.js",
     "build": "npm run lint"

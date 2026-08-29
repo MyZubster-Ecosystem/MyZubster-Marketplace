@@ -6,21 +6,36 @@ const { requireDatabaseReady } = require('../middleware/databaseReady');
 const {
   ALL_CURRENCIES,
   normalizeCurrency,
+  normalizePaymentAmount,
   normalizeRecipient,
-  parsePositiveAmount
 } = require('../middleware/paymentValidation');
 
 router.use(authenticate, requireDatabaseReady);
 
 function validatedPayment(data) {
-  const amount = parsePositiveAmount(data?.amount);
+  const amount = normalizePaymentAmount(data?.amount);
   const currency = normalizeCurrency(data?.currency, ALL_CURRENCIES);
   const recipient = normalizeRecipient(data?.recipient);
   if (amount === null || currency === null || recipient === null) return null;
   return { amount, currency, recipient };
 }
 
-router.post('/create', (req, res) => {
+function validBatchId(value) {
+  return typeof value === 'string' && /^BATCH-[0-9a-f-]{36}$/.test(value);
+}
+
+function handleServiceError(res, error) {
+  if (error.code === 'BATCH_NOT_FOUND') {
+    return res.status(404).json({ error: 'Batch not found', code: error.code });
+  }
+  if (error.code === 'SETTLEMENT_PROVIDER_NOT_CONFIGURED') {
+    return res.status(503).json({ error: error.message, code: error.code });
+  }
+  console.error('Batch payment storage failed:', error.message);
+  return res.status(503).json({ error: 'Batch payment storage unavailable', code: 'PAYMENT_STORAGE_UNAVAILABLE' });
+}
+
+router.post('/create', async (req, res) => {
   try {
     const rawPayments = req.body?.payments ?? [];
     if (!Array.isArray(rawPayments) || rawPayments.length > 100) {
@@ -31,38 +46,47 @@ router.post('/create', (req, res) => {
       return res.status(400).json({ error: 'Every batch payment must contain a valid amount, currency and recipient' });
     }
     const name = typeof req.body?.name === 'string' ? req.body.name.trim().slice(0, 100) : 'Batch Payment';
-    const batch = BatchPaymentService.createBatch({ name: name || 'Batch Payment', payments });
+    const batch = await BatchPaymentService.createBatch(
+      { name: name || 'Batch Payment', payments },
+      req.user.id
+    );
     return res.status(201).json({ success: true, data: batch });
   } catch (error) {
-    return res.status(400).json({ error: error.message });
+    return handleServiceError(res, error);
   }
 });
 
-router.post('/add-payment', (req, res) => {
+router.post('/add-payment', async (req, res) => {
   try {
     const paymentInput = validatedPayment(req.body);
-    if (!paymentInput || typeof req.body?.batchId !== 'string') {
+    if (!paymentInput || !validBatchId(req.body?.batchId)) {
       return res.status(400).json({ error: 'batchId and a valid payment are required' });
     }
-    const payment = BatchPaymentService.addPaymentToBatch(req.body.batchId, paymentInput);
+    const payment = await BatchPaymentService.addPaymentToBatch(req.body.batchId, paymentInput, req.user.id);
     return res.status(201).json({ success: true, data: payment });
   } catch (error) {
-    return res.status(400).json({ error: error.message });
+    return handleServiceError(res, error);
   }
 });
 
-router.post('/execute/:batchId', (req, res) => {
+router.post('/execute/:batchId', async (req, res) => {
   try {
-    const batch = BatchPaymentService.executeBatch(req.params.batchId);
+    if (!validBatchId(req.params.batchId)) {
+      return res.status(404).json({ error: 'Batch not found', code: 'BATCH_NOT_FOUND' });
+    }
+    const batch = await BatchPaymentService.executeBatch(req.params.batchId, req.user.id);
     return res.json({ success: true, data: batch });
   } catch (error) {
-    const status = error.code === 'SETTLEMENT_PROVIDER_NOT_CONFIGURED' ? 503 : 400;
-    return res.status(status).json({ error: error.message, code: error.code });
+    return handleServiceError(res, error);
   }
 });
 
-router.get('/stats', (req, res) => {
-  res.json({ success: true, data: BatchPaymentService.getStats() });
+router.get('/stats', async (req, res) => {
+  try {
+    return res.json({ success: true, data: await BatchPaymentService.getStats(req.user.id) });
+  } catch (error) {
+    return handleServiceError(res, error);
+  }
 });
 
 module.exports = router;

@@ -16,6 +16,8 @@ Marketplace/service repository in the MyZubster ecosystem, currently containing 
 
 Payment, payout, subscription renewal and settlement endpoints are fail-closed. They require an authenticated user and a ready MongoDB connection. Until an independent settlement provider is configured, the API may create only unverified payment intents and must not emit synthetic transaction IDs or report external settlement as completed.
 
+Payment batches and subscriptions are stored in MongoDB and scoped to the authenticated user. Fractional monetary amounts must be sent as decimal strings (up to 18 fractional digits); floating-point JSON numbers are rejected on persisted financial records.
+
 Historical bounty labels or amounts in issues/commits are records of project intent/work tracking. They are **not proof that an external XMR/MYZ settlement occurred**.
 
 ## Current API areas

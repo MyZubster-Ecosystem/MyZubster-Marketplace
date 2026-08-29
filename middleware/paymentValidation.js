@@ -11,12 +11,30 @@ function parsePositiveAmount(value) {
 }
 
 function normalizePaymentAmount(value) {
-  const amount = typeof value === 'number' ? String(value) : value?.trim?.();
+  const amount = typeof value === 'number'
+    ? (Number.isSafeInteger(value) ? String(value) : null)
+    : value?.trim?.();
   if (typeof amount !== 'string' || !/^(?:0|[1-9]\d{0,8})(?:\.\d{1,18})?$/.test(amount)) {
     return null;
   }
-  if (Number(amount) <= 0) return null;
+  if (BigInt(amount.replace('.', '')) === 0n) return null;
   return amount;
+}
+
+function addDecimalAmounts(values) {
+  const scale = 10n ** 18n;
+  let total = 0n;
+
+  for (const value of values) {
+    const amount = normalizePaymentAmount(value);
+    if (amount === null) throw new Error('Invalid decimal amount');
+    const [whole, fraction = ''] = amount.split('.');
+    total += (BigInt(whole) * scale) + BigInt(fraction.padEnd(18, '0'));
+  }
+
+  const whole = total / scale;
+  const fraction = String(total % scale).padStart(18, '0').replace(/0+$/, '');
+  return fraction ? `${whole}.${fraction}` : String(whole);
 }
 
 function normalizeCurrency(value, supported = ALL_CURRENCIES) {
@@ -75,6 +93,7 @@ module.exports = {
   ALL_CURRENCIES,
   CRYPTO_CURRENCIES,
   FIAT_CURRENCIES,
+  addDecimalAmounts,
   normalizeCurrency,
   normalizePaymentAmount,
   normalizeRecipient,
