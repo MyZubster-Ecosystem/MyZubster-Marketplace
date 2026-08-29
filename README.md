@@ -10,6 +10,12 @@
 
 Marketplace/service repository in the MyZubster ecosystem, currently containing garden and sensor-oriented API work plus historical bounty-linked development.
 
+## How the current Marketplace surface fits together
+
+![MyZubster Marketplace documentation flow showing garden records and sensor data entering Marketplace APIs, evidence review, and a separately verified external settlement boundary](assets/visual/MYZ-VIS-013-marketplace-garden-sensor-flow.svg)
+
+`MYZ-VIS-013` is a `DOCUMENTATION_VISUAL` derived from the current repository API/status documentation. It explains the intended relationship between garden records, sensor observations, Marketplace APIs and evidence review; it is not proof of production deployment, sensor accuracy, adoption or payment. Provenance is recorded in [`assets/visual/README.md`](assets/visual/README.md).
+
 ## Status
 
 **Development / active validation.** Implemented endpoints and tests should be verified from the current source tree before production use.
