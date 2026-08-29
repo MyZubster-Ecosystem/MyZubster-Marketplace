@@ -35,6 +35,7 @@
     "ws": "8.21.3",
     "ip-address": "10.3.1",
     "@coinbase/wallet-sdk": "4.3.7",
-    "thirdweb": "5.89.0"
+    "thirdweb": "5.89.0",
+    "lodash": "4.18.0"
   }
 }
