@@ -1,0 +1,8 @@
+{
+  "name": "riciclobot",
+  "version": "1.0.0",
+  "description": "Robot per raccolta differenziata intelligente",
+  "main": "index.js",
+  "scripts": { "start": "node index.js" },
+  "dependencies": { "express": "^4.18.0", "axios": "^1.6.0" }
+}

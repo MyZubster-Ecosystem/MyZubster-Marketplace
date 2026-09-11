@@ -1,0 +1,471 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🌱 Mappa Orti Urbani - MyZubster</title>
+    
+    <!-- Leaflet CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    
+    <!-- Font Awesome per le icone -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #f0f4f0;
+        }
+        
+        .container {
+            max-width: 1400px;
+            margin: 20px auto;
+            padding: 0 20px;
+        }
+        
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 20px 0;
+            border-bottom: 3px solid #4CAF50;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+            gap: 15px;
+        }
+        
+        .header h1 {
+            color: #2E7D32;
+            font-size: 28px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .header h1 span {
+            color: #4CAF50;
+        }
+        
+        .header h1 .myzubster {
+            color: #2E7D32;
+            font-weight: bold;
+        }
+        
+        .controls {
+            display: flex;
+            gap: 15px;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+        
+        .controls input {
+            padding: 10px 15px;
+            border: 2px solid #e0e0e0;
+            border-radius: 25px;
+            font-size: 14px;
+            min-width: 200px;
+            transition: border-color 0.3s;
+        }
+        
+        .controls input:focus {
+            outline: none;
+            border-color: #4CAF50;
+        }
+        
+        .controls button {
+            padding: 10px 20px;
+            background: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 25px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: background 0.3s;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .controls button:hover {
+            background: #388E3C;
+        }
+        
+        #map {
+            height: 65vh;
+            width: 100%;
+            border-radius: 12px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+            background: #e8e8e8;
+        }
+        
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 15px;
+            margin-top: 20px;
+            padding: 20px;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+        }
+        
+        .stat-item {
+            text-align: center;
+            padding: 10px;
+        }
+        
+        .stat-item .number {
+            font-size: 28px;
+            font-weight: bold;
+            color: #2E7D32;
+            display: block;
+        }
+        
+        .stat-item .label {
+            font-size: 14px;
+            color: #666;
+            margin-top: 5px;
+        }
+        
+        .stat-item .icon {
+            font-size: 24px;
+            display: block;
+            margin-bottom: 5px;
+        }
+        
+        .loading {
+            text-align: center;
+            padding: 50px;
+            color: #666;
+            font-size: 18px;
+        }
+        
+        .loading i {
+            font-size: 40px;
+            color: #4CAF50;
+            display: block;
+            margin-bottom: 15px;
+        }
+        
+        .footer {
+            text-align: center;
+            padding: 20px;
+            color: #888;
+            font-size: 14px;
+            margin-top: 20px;
+        }
+        
+        .leaflet-popup-content {
+            font-size: 14px;
+            line-height: 1.6;
+            min-width: 200px;
+        }
+        
+        .leaflet-popup-content h3 {
+            color: #2E7D32;
+            margin: 0 0 8px 0;
+        }
+        
+        .leaflet-popup-content .garden-detail {
+            margin: 4px 0;
+        }
+        
+        .leaflet-popup-content .garden-detail i {
+            width: 20px;
+            color: #4CAF50;
+        }
+        
+        @media (max-width: 768px) {
+            .header {
+                flex-direction: column;
+                align-items: flex-start;
+            }
+            
+            .controls {
+                width: 100%;
+                flex-direction: column;
+            }
+            
+            .controls input {
+                min-width: 100%;
+            }
+            
+            .controls button {
+                width: 100%;
+                justify-content: center;
+            }
+            
+            #map {
+                height: 50vh;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>
+                <i class="fas fa-leaf" style="color:#4CAF50;"></i>
+                <span class="myzubster">MyZubster</span> - Orti Urbani
+            </h1>
+            <div class="controls">
+                <input type="text" id="searchInput" placeholder="🔍 Cerca orto per nome..." />
+                <button onclick="refreshMap()">
+                    <i class="fas fa-sync-alt"></i> Aggiorna
+                </button>
+                <button onclick="locateMe()" style="background:#2196F3;">
+                    <i class="fas fa-location-dot"></i> La mia posizione
+                </button>
+            </div>
+        </div>
+        
+        <div id="map">
+            <div class="loading">
+                <i class="fas fa-spinner fa-spin"></i>
+                Caricamento mappa...
+            </div>
+        </div>
+        
+        <div class="stats" id="stats">
+            <div class="stat-item">
+                <span class="icon">🌿</span>
+                <span class="number" id="totalGardens">0</span>
+                <span class="label">Orti Totali</span>
+            </div>
+            <div class="stat-item">
+                <span class="icon">🌾</span>
+                <span class="number" id="totalCrops">0</span>
+                <span class="label">Colture</span>
+            </div>
+            <div class="stat-item">
+                <span class="icon">📡</span>
+                <span class="number" id="totalSensors">0</span>
+                <span class="label">Sensori</span>
+            </div>
+        </div>
+        
+        <div class="footer">
+            🌱 MyZubster - Mappa Orti Urbani • Dati in tempo reale
+        </div>
+    </div>
+    
+    <script>
+        let map = null;
+        let markersLayer = null;
+        let gardens = [];
+        let userLocation = null;
+        
+        function initMap() {
+            // Inizializza la mappa
+            map = L.map('map').setView([43.7696, 11.2558], 5);
+            
+            // Aggiungi il tile layer
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+            }).addTo(map);
+            
+            // Crea il layer per i marker
+            markersLayer = L.layerGroup().addTo(map);
+            
+            // Carica i dati
+            loadGardens();
+        }
+        
+        async function loadGardens() {
+            try {
+                const response = await fetch('/api/gardens');
+                const data = await response.json();
+                
+                if (data.success) {
+                    gardens = data.data;
+                    updateMarkers(gardens);
+                    updateStats(gardens);
+                } else {
+                    showError('❌ Errore nel caricamento dei dati');
+                }
+            } catch (error) {
+                console.error('Error loading gardens:', error);
+                showError('❌ Errore di connessione al server');
+            }
+        }
+        
+        function updateMarkers(gardens) {
+            if (!map) return;
+            
+            markersLayer.clearLayers();
+            
+            if (!gardens || gardens.length === 0) {
+                return;
+            }
+            
+            const gardenIcon = L.divIcon({
+                html: '<i class="fas fa-seedling" style="font-size:24px;color:#4CAF50;text-shadow:0 0 10px rgba(0,0,0,0.2);"></i>',
+                className: 'garden-marker',
+                iconSize: [30, 30],
+                iconAnchor: [15, 30]
+            });
+            
+            gardens.forEach(garden => {
+                if (!garden.coordinates) return;
+                
+                const marker = L.marker(
+                    [garden.coordinates.lat, garden.coordinates.lng],
+                    { icon: gardenIcon }
+                ).addTo(markersLayer);
+                
+                const cropsHtml = garden.crops && garden.crops.length > 0 
+                    ? `<div class="garden-detail"><i class="fas fa-seedling"></i> <strong>Colture:</strong> ${garden.crops.join(', ')}</div>`
+                    : '';
+                
+                const sensorsHtml = garden.sensors && garden.sensors.length > 0 
+                    ? `<div class="garden-detail"><i class="fas fa-microchip"></i> <strong>Sensori:</strong> ${garden.sensors.length} attivi</div>`
+                    : '';
+                
+                const sizeHtml = garden.size && garden.size > 0 
+                    ? `<div class="garden-detail"><i class="fas fa-ruler-combined"></i> <strong>Superficie:</strong> ${garden.size} m²</div>`
+                    : '';
+                
+                marker.bindPopup(`
+                    <div>
+                        <h3><i class="fas fa-leaf" style="color:#4CAF50;"></i> ${garden.name}</h3>
+                        <div class="garden-detail"><i class="fas fa-location-dot"></i> ${garden.address || 'Indirizzo non specificato'}</div>
+                        ${garden.city ? `<div class="garden-detail"><i class="fas fa-city"></i> ${garden.city}</div>` : ''}
+                        ${cropsHtml}
+                        ${sensorsHtml}
+                        ${sizeHtml}
+                        ${garden.description ? `<div class="garden-detail"><i class="fas fa-comment"></i> <em>${garden.description}</em></div>` : ''}
+                        <div style="margin-top:8px;font-size:12px;color:#999;">
+                            <i class="far fa-calendar-alt"></i> ${new Date(garden.createdAt).toLocaleDateString('it-IT')}
+                        </div>
+                    </div>
+                `);
+            });
+            
+            // Adatta la visuale per mostrare tutti i marker
+            if (gardens.length > 0) {
+                const bounds = L.latLngBounds(gardens.map(g => [g.coordinates.lat, g.coordinates.lng]));
+                map.fitBounds(bounds, { padding: [50, 50] });
+            }
+        }
+        
+        function updateStats(gardens) {
+            document.getElementById('totalGardens').textContent = gardens.length;
+            
+            const crops = new Set();
+            const sensors = new Set();
+            gardens.forEach(g => {
+                if (g.crops) g.crops.forEach(c => crops.add(c));
+                if (g.sensors) g.sensors.forEach(s => sensors.add(s));
+            });
+            document.getElementById('totalCrops').textContent = crops.size;
+            document.getElementById('totalSensors').textContent = sensors.size;
+        }
+        
+        function locateMe() {
+            if (!navigator.geolocation) {
+                alert('❌ La geolocalizzazione non è supportata dal tuo browser');
+                return;
+            }
+            
+            navigator.geolocation.getCurrentPosition(
+                (position) => {
+                    const { latitude, longitude } = position.coords;
+                    userLocation = { lat: latitude, lng: longitude };
+                    
+                    if (map) {
+                        map.setView([latitude, longitude], 13);
+                        
+                        // Aggiungi un marker per la posizione dell'utente
+                        const userIcon = L.divIcon({
+                            html: '<i class="fas fa-user" style="font-size:24px;color:#2196F3;text-shadow:0 0 10px rgba(0,0,0,0.3);"></i>',
+                            className: 'user-marker',
+                            iconSize: [30, 30],
+                            iconAnchor: [15, 30]
+                        });
+                        
+                        L.marker([latitude, longitude], { icon: userIcon })
+                            .addTo(map)
+                            .bindPopup('📍 La tua posizione')
+                            .openPopup();
+                        
+                        // Trova orti vicini
+                        fetchGardensNearby(latitude, longitude);
+                    }
+                },
+                (error) => {
+                    alert('❌ Impossibile ottenere la posizione: ' + error.message);
+                }
+            );
+        }
+        
+        async function fetchGardensNearby(lat, lng) {
+            try {
+                const response = await fetch(`/api/gardens/nearby?lat=${lat}&lng=${lng}&radius=10000`);
+                const data = await response.json();
+                
+                if (data.success && data.data.length > 0) {
+                    updateMarkers(data.data);
+                    updateStats(data.data);
+                    alert(`📍 Trovati ${data.data.length} orti vicini a te!`);
+                } else {
+                    alert('🌿 Nessun orto trovato nelle vicinanze');
+                }
+            } catch (error) {
+                console.error('Error fetching nearby gardens:', error);
+            }
+        }
+        
+        function showError(message) {
+            const mapContainer = document.getElementById('map');
+            mapContainer.innerHTML = `
+                <div class="loading">
+                    <i class="fas fa-exclamation-triangle" style="color:#f44336;"></i>
+                    ${message}
+                    <br><br>
+                    <button onclick="location.reload()" style="padding:10px 20px;background:#4CAF50;color:white;border:none;border-radius:25px;cursor:pointer;">
+                        <i class="fas fa-sync-alt"></i> Riprova
+                    </button>
+                </div>
+            `;
+        }
+        
+        function refreshMap() {
+            loadGardens();
+        }
+        
+        // Ricerca
+        document.getElementById('searchInput').addEventListener('input', (e) => {
+            const searchTerm = e.target.value.toLowerCase();
+            if (!searchTerm) {
+                updateMarkers(gardens);
+                return;
+            }
+            
+            const filtered = gardens.filter(g => 
+                g.name.toLowerCase().includes(searchTerm) ||
+                (g.address && g.address.toLowerCase().includes(searchTerm)) ||
+                (g.city && g.city.toLowerCase().includes(searchTerm)) ||
+                (g.description && g.description.toLowerCase().includes(searchTerm))
+            );
+            updateMarkers(filtered);
+        });
+        
+        // Carica la mappa quando la pagina è pronta
+        document.addEventListener('DOMContentLoaded', initMap);
+        
+        // Gestisci il ridimensionamento della finestra
+        window.addEventListener('resize', () => {
+            if (map) {
+                map.invalidateSize();
+            }
+        });
+    </script>
+</body>
+</html>
