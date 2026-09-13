@@ -3,7 +3,7 @@
 const crypto = require('crypto');
 const MyzWorkerOperation = require('../models/MyzWorkerOperation');
 
-const ACTIVE = new Set(['queued', 'running', 'retrying']);
+const ACTIVE = new Set(['queued', 'running', 'retrying', 'recovery_required']);
 const TERMINAL = new Set(['completed', 'failed', 'cancelled']);
 
 function iso(value) {
@@ -79,7 +79,7 @@ class MyzWorkerOperationRegistryService {
 
   async markRetry(operationId, owner, nextRetryAt, errorCode = null) {
     const operation = await this.model.findOne({ operationId: String(operationId) });
-    if (!operation || TERMINAL.has(operation.status)) return null;
+    if (!operation || TERMINAL.has(operation.status) || operation.status === 'recovery_required') return null;
     if (operation.leaseOwner && String(operation.leaseOwner) !== String(owner || '')) return null;
     operation.status = 'retrying';
     operation.nextRetryAt = nextRetryAt ? new Date(nextRetryAt) : this.now();
@@ -91,7 +91,7 @@ class MyzWorkerOperationRegistryService {
 
   async markCompleted(operationId, owner, patch = {}) {
     const operation = await this.model.findOne({ operationId: String(operationId) });
-    if (!operation || TERMINAL.has(operation.status)) return operation;
+    if (!operation || TERMINAL.has(operation.status) || operation.status === 'recovery_required') return operation;
     if (operation.leaseOwner && String(operation.leaseOwner) !== String(owner || '')) return null;
     operation.status = 'completed';
     operation.completedAt = this.now();
@@ -108,7 +108,7 @@ class MyzWorkerOperationRegistryService {
 
   async markFailed(operationId, owner, errorCode = null) {
     const operation = await this.model.findOne({ operationId: String(operationId) });
-    if (!operation || TERMINAL.has(operation.status)) return operation;
+    if (!operation || TERMINAL.has(operation.status) || operation.status === 'recovery_required') return operation;
     if (operation.leaseOwner && String(operation.leaseOwner) !== String(owner || '')) return null;
     operation.status = 'failed';
     operation.completedAt = this.now();
@@ -117,6 +117,40 @@ class MyzWorkerOperationRegistryService {
     operation.nextRetryAt = null;
     operation.lastErrorCode = errorCode || null;
     return operation.save();
+  }
+
+  async quarantineExpiredRunning(limit = 100) {
+    const now = this.now();
+    const boundedLimit = Math.max(1, Math.min(500, Number(limit || 100)));
+    const expired = await this.model.find({
+      status: 'running',
+      leaseExpiresAt: { $ne: null, $lte: now }
+    }).sort({ leaseExpiresAt: 1 }).limit(boundedLimit).lean();
+
+    const quarantined = [];
+    for (const candidate of expired) {
+      const previousOwner = candidate.leaseOwner || null;
+      const previousLeaseExpiresAt = candidate.leaseExpiresAt || null;
+      const updated = await this.model.findOneAndUpdate({
+        operationId: candidate.operationId,
+        status: 'running',
+        leaseExpiresAt: candidate.leaseExpiresAt
+      }, {
+        $set: {
+          status: 'recovery_required',
+          leaseOwner: null,
+          leaseExpiresAt: null,
+          nextRetryAt: null,
+          lastErrorCode: 'MYZ_SETTLEMENT_LEASE_EXPIRED_AMBIGUOUS',
+          'metadata.recoveryRequiredAt': now,
+          'metadata.recoveryReason': 'expired_running_lease',
+          'metadata.previousLeaseOwner': previousOwner,
+          'metadata.previousLeaseExpiresAt': previousLeaseExpiresAt
+        }
+      }, { new: true });
+      if (updated) quarantined.push(updated);
+    }
+    return quarantined;
   }
 
   async lookup(selectors = {}) {
