@@ -2,6 +2,7 @@
 
 const MyzRedemption = require('../models/MyzRedemption');
 const MyzLedgerReservation = require('../models/MyzLedgerReservation');
+const { attachRunbook } = require('./myzReconciliationRunbookService');
 
 function ageMinutes(date, now = new Date()) {
   if (!date) return null;
@@ -15,45 +16,16 @@ function classifyReconciliation(redemption, reservation, { staleMinutes = 15, no
   const redemptionAge = ageMinutes(redemption?.updatedAt || redemption?.createdAt, now);
   const reservationAge = ageMinutes(reservation?.updatedAt || reservation?.createdAt, now);
 
-  if (!redemption && reservation) {
-    findings.push({ severity: 'high', code: 'ORPHAN_RESERVATION', message: 'Reservation exists without a redemption record.' });
-  }
-
-  if (redemption?.state === 'failed') {
-    findings.push({ severity: 'high', code: 'REDEMPTION_FAILED', message: redemption.failureCode || 'Redemption is in failed state.' });
-  }
-
-  if (redemption?.state === 'settled' && redemptionAge !== null && redemptionAge >= staleMinutes) {
-    findings.push({ severity: 'high', code: 'SETTLED_NOT_RECONCILED', message: 'External settlement is recorded but canonical reconciliation has not completed.' });
-  }
-
-  if (redemption?.state === 'rolled_back') {
-    findings.push({ severity: 'info', code: 'REDEMPTION_ROLLED_BACK', message: redemption.failureCode || 'Redemption rolled back.' });
-  }
-
-  if (reservation?.state === 'failed') {
-    findings.push({ severity: 'high', code: 'RESERVATION_FAILED', message: reservation.failureCode || 'MYZ reservation is in failed state.' });
-  }
-
-  if (reservation?.state === 'reserved' && reservationAge !== null && reservationAge >= staleMinutes) {
-    findings.push({ severity: 'medium', code: 'STALE_RESERVATION', message: 'MYZ credit remains reserved beyond the operator threshold.' });
-  }
-
-  if (reservation?.state === 'committed' && !reservation.canonicalDebitEntryId) {
-    findings.push({ severity: 'high', code: 'COMMITTED_WITHOUT_CANONICAL_ENTRY', message: 'Reservation is committed without a canonical debit entry ID.' });
-  }
-
-  if (redemption?.state === 'reconciled' && reservation?.state !== 'committed') {
-    findings.push({ severity: 'high', code: 'RECONCILED_WITHOUT_COMMITTED_RESERVATION', message: 'Redemption is reconciled but its MYZ reservation is not committed.' });
-  }
-
-  if (redemption?.state === 'rolled_back' && reservation && reservation.state !== 'released') {
-    findings.push({ severity: 'high', code: 'ROLLBACK_WITH_UNRELEASED_RESERVATION', message: 'Redemption rolled back but reservation is not released.' });
-  }
-
-  if (reservation?.state === 'committed' && redemption && redemption.state !== 'reconciled') {
-    findings.push({ severity: 'high', code: 'CANONICAL_DEBIT_WITHOUT_RECONCILED_REDEMPTION', message: 'Canonical MYZ debit is committed but redemption is not reconciled.' });
-  }
+  if (!redemption && reservation) findings.push({ severity: 'high', code: 'ORPHAN_RESERVATION', message: 'Reservation exists without a redemption record.' });
+  if (redemption?.state === 'failed') findings.push({ severity: 'high', code: 'REDEMPTION_FAILED', message: redemption.failureCode || 'Redemption is in failed state.' });
+  if (redemption?.state === 'settled' && redemptionAge !== null && redemptionAge >= staleMinutes) findings.push({ severity: 'high', code: 'SETTLED_NOT_RECONCILED', message: 'External settlement is recorded but canonical reconciliation has not completed.' });
+  if (redemption?.state === 'rolled_back') findings.push({ severity: 'info', code: 'REDEMPTION_ROLLED_BACK', message: redemption.failureCode || 'Redemption rolled back.' });
+  if (reservation?.state === 'failed') findings.push({ severity: 'high', code: 'RESERVATION_FAILED', message: reservation.failureCode || 'MYZ reservation is in failed state.' });
+  if (reservation?.state === 'reserved' && reservationAge !== null && reservationAge >= staleMinutes) findings.push({ severity: 'medium', code: 'STALE_RESERVATION', message: 'MYZ credit remains reserved beyond the operator threshold.' });
+  if (reservation?.state === 'committed' && !reservation.canonicalDebitEntryId) findings.push({ severity: 'high', code: 'COMMITTED_WITHOUT_CANONICAL_ENTRY', message: 'Reservation is committed without a canonical debit entry ID.' });
+  if (redemption?.state === 'reconciled' && reservation?.state !== 'committed') findings.push({ severity: 'high', code: 'RECONCILED_WITHOUT_COMMITTED_RESERVATION', message: 'Redemption is reconciled but its MYZ reservation is not committed.' });
+  if (redemption?.state === 'rolled_back' && reservation && reservation.state !== 'released') findings.push({ severity: 'high', code: 'ROLLBACK_WITH_UNRELEASED_RESERVATION', message: 'Redemption rolled back but reservation is not released.' });
+  if (reservation?.state === 'committed' && redemption && redemption.state !== 'reconciled') findings.push({ severity: 'high', code: 'CANONICAL_DEBIT_WITHOUT_RECONCILED_REDEMPTION', message: 'Canonical MYZ debit is committed but redemption is not reconciled.' });
 
   const highest = findings.some(item => item.severity === 'high')
     ? 'high'
@@ -66,7 +38,7 @@ function classifyReconciliation(redemption, reservation, { staleMinutes = 15, no
   return {
     severity: highest,
     requiresInvestigation: ['high', 'medium'].includes(highest),
-    findings,
+    findings: findings.map(attachRunbook),
     ageMinutes: { redemption: redemptionAge, reservation: reservationAge }
   };
 }
