@@ -57,6 +57,8 @@ For that reason, the Coinbase candidate adapter refuses every MYZ pair unless `C
 
 Do **not** set an invented symbol merely to bypass this guard. An external asset mapping must correspond to a real, reviewed asset supported by the provider.
 
+Tracking issue: https://github.com/MyZubster-Ecosystem/MyZubster-Marketplace/issues/63
+
 ## Candidate provider probing
 
 Candidate probing is deliberately separate from the authorized execution-provider registry.
