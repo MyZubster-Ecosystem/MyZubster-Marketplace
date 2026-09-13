@@ -1,4 +1,7 @@
 const crypto = require('crypto');
+const ConversionAudit = require('../models/ConversionAudit');
+const HttpConversionProviderAdapter = require('./providers/httpConversionProviderAdapter');
+const { applyMyZubsterFee, normalizeDecimal } = require('./conversionFeeEngine');
 
 const SUPPORTED_ASSETS = Object.freeze(['MYZ', 'EUR', 'USDC', 'XMR']);
 
@@ -13,16 +16,35 @@ class ProviderUnavailableError extends Error {
 class ConversionGatewayService {
   constructor() {
     this.providers = new Map();
+    this.configureProviderFromEnv();
+  }
+
+  configureProviderFromEnv() {
+    if (process.env.CONVERSION_PROVIDER_ENABLED !== 'true') return;
+    if (process.env.CONVERSION_PROVIDER_APPROVED !== 'true') return;
+    if (!process.env.CONVERSION_PROVIDER_URL) return;
+
+    const name = process.env.CONVERSION_PROVIDER_NAME || 'external-provider';
+    const provider = new HttpConversionProviderAdapter({
+      name,
+      baseUrl: process.env.CONVERSION_PROVIDER_URL,
+      apiKey: process.env.CONVERSION_PROVIDER_API_KEY || null,
+      timeoutMs: process.env.CONVERSION_PROVIDER_TIMEOUT_MS || 8000,
+      approved: true
+    });
+    this.registerProvider(name, provider);
   }
 
   listSupportedAssets() {
     return [...SUPPORTED_ASSETS];
   }
 
+  listProviders() {
+    return [...this.providers.keys()];
+  }
+
   registerProvider(name, provider) {
-    if (!name || typeof name !== 'string') {
-      throw new TypeError('Provider name is required');
-    }
+    if (!name || typeof name !== 'string') throw new TypeError('Provider name is required');
     if (!provider || typeof provider.getQuote !== 'function') {
       throw new TypeError('Provider must implement getQuote(request)');
     }
@@ -37,7 +59,7 @@ class ConversionGatewayService {
   validateQuoteRequest({ from, to, amount }) {
     const normalizedFrom = String(from || '').toUpperCase();
     const normalizedTo = String(to || '').toUpperCase();
-    const normalizedAmount = String(amount || '').trim();
+    const normalizedAmount = typeof amount === 'string' ? amount.trim() : '';
 
     if (!SUPPORTED_ASSETS.includes(normalizedFrom) || !SUPPORTED_ASSETS.includes(normalizedTo)) {
       const error = new Error('Unsupported conversion pair');
@@ -63,37 +85,140 @@ class ConversionGatewayService {
     const provider = this.getProvider(input.provider);
     if (!provider) throw new ProviderUnavailableError();
 
-    const providerQuote = await provider.getQuote({
-      ...request,
-      requestedBy: context.userId || null
-    });
-
+    const providerQuote = await provider.getQuote({ ...request, requestedBy: context.userId || null });
     if (!providerQuote || providerQuote.executable !== true) {
       throw new ProviderUnavailableError('Configured provider did not return an executable quote');
     }
 
-    return {
-      quoteId: providerQuote.quoteId || `Q-${crypto.randomUUID()}`,
+    const providerFee = normalizeDecimal(providerQuote.providerFee || '0');
+    const fees = applyMyZubsterFee(
+      normalizeDecimal(providerQuote.grossRecipientAmount),
+      Number(process.env.MYZ_CONVERSION_FEE_BPS || 100)
+    );
+
+    const quote = {
+      quoteId: String(providerQuote.quoteId || `Q-${crypto.randomUUID()}`),
       from: request.from,
       to: request.to,
       amount: request.amount,
-      rate: String(providerQuote.rate),
-      providerFee: String(providerQuote.providerFee || '0'),
-      myzubsterFee: String(providerQuote.myzubsterFee || '0'),
-      recipientAmount: String(providerQuote.recipientAmount),
-      expiresAt: providerQuote.expiresAt,
-      provider: providerQuote.provider,
+      rate: normalizeDecimal(providerQuote.rate),
+      grossRecipientAmount: fees.grossRecipientAmount,
+      providerFee,
+      myzubsterFee: fees.myzubsterFee,
+      recipientAmount: fees.recipientAmount,
+      feeBasisPoints: fees.feeBasisPoints,
+      expiresAt: String(providerQuote.expiresAt),
+      provider: String(providerQuote.provider || input.provider || 'external-provider'),
       executable: true,
       settlement: 'external_authorized_provider'
     };
+
+    try {
+      await ConversionAudit.create({
+        quoteId: quote.quoteId,
+        requestedBy: context.userId,
+        event: 'quote_issued',
+        provider: quote.provider,
+        from: quote.from,
+        to: quote.to,
+        amount: quote.amount,
+        grossRecipientAmount: quote.grossRecipientAmount,
+        providerFee: quote.providerFee,
+        myzubsterFee: quote.myzubsterFee,
+        recipientAmount: quote.recipientAmount,
+        feeBasisPoints: quote.feeBasisPoints
+      });
+    } catch (error) {
+      const auditError = new Error('Quote audit storage unavailable');
+      auditError.code = 'CONVERSION_AUDIT_UNAVAILABLE';
+      throw auditError;
+    }
+
+    return quote;
   }
 
-  async executeQuote() {
-    const provider = this.getProvider();
+  async executeQuote(input, context = {}) {
+    const quoteId = String(input.quoteId || '').trim();
+    if (!quoteId) {
+      const error = new Error('quoteId is required');
+      error.code = 'INVALID_CONVERSION_REQUEST';
+      throw error;
+    }
+
+    const issued = await ConversionAudit.findOne({
+      quoteId,
+      requestedBy: context.userId,
+      event: 'quote_issued'
+    }).sort({ createdAt: -1 }).lean();
+
+    if (!issued) {
+      const error = new Error('Quote not found for authenticated user');
+      error.code = 'CONVERSION_QUOTE_NOT_FOUND';
+      throw error;
+    }
+
+    const alreadySettled = await ConversionAudit.exists({ quoteId, requestedBy: context.userId, event: 'settled' });
+    if (alreadySettled) {
+      const error = new Error('Quote has already been settled');
+      error.code = 'CONVERSION_ALREADY_SETTLED';
+      throw error;
+    }
+
+    const provider = this.getProvider(issued.provider);
     if (!provider || typeof provider.executeQuote !== 'function') {
       throw new ProviderUnavailableError('Execution is disabled until an authorized provider adapter is configured');
     }
-    throw new ProviderUnavailableError('Execution adapter not enabled');
+
+    await ConversionAudit.create({
+      quoteId,
+      requestedBy: context.userId,
+      event: 'execution_requested',
+      provider: issued.provider
+    });
+
+    try {
+      const result = await provider.executeQuote({ quoteId, requestedBy: context.userId });
+      if (!result || result.status !== 'settled' || !result.providerTransactionId) {
+        const error = new Error('Provider settlement could not be verified');
+        error.code = 'UNVERIFIED_PROVIDER_SETTLEMENT';
+        throw error;
+      }
+
+      const evidenceHash = crypto.createHash('sha256')
+        .update(JSON.stringify(result.evidence || { providerTransactionId: result.providerTransactionId, settledAt: result.settledAt }))
+        .digest('hex');
+
+      await ConversionAudit.create({
+        quoteId,
+        requestedBy: context.userId,
+        event: 'settled',
+        provider: issued.provider,
+        providerTransactionId: result.providerTransactionId,
+        evidenceHash
+      });
+
+      return {
+        quoteId,
+        status: 'settled',
+        provider: issued.provider,
+        providerTransactionId: result.providerTransactionId,
+        settledAt: result.settledAt,
+        evidenceHash
+      };
+    } catch (error) {
+      try {
+        await ConversionAudit.create({
+          quoteId,
+          requestedBy: context.userId,
+          event: 'execution_failed',
+          provider: issued.provider,
+          errorCode: error.code || 'PROVIDER_EXECUTION_FAILED'
+        });
+      } catch (_) {
+        // Preserve the original provider failure; audit storage is already fail-closed on quote issuance.
+      }
+      throw error;
+    }
   }
 }
 
