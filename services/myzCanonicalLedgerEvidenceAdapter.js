@@ -8,6 +8,7 @@ class MyzCanonicalLedgerEvidenceAdapter {
     this.apiKey = options.apiKey || null;
     this.reviewed = options.reviewed === true;
     this.timeoutMs = Number(options.timeoutMs || 8000);
+    this.httpClient = options.httpClient || axios;
     this.source = 'canonical-myz-ledger-api';
     if (!this.baseUrl) throw new TypeError('Canonical MYZ ledger evidence URL is required');
     if (!this.reviewed) {
@@ -36,7 +37,7 @@ class MyzCanonicalLedgerEvidenceAdapter {
       throw error;
     }
 
-    const response = await axios.get(`${this.baseUrl}/v1/myz/entries/lookup`, {
+    const response = await this.httpClient.get(`${this.baseUrl}/v1/myz/entries/lookup`, {
       headers: this.headers(),
       timeout: this.timeoutMs,
       params: {
