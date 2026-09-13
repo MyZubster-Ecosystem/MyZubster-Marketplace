@@ -20,6 +20,35 @@ Payment batches and subscriptions are stored in MongoDB and scoped to the authen
 
 Historical bounty labels or amounts in issues/commits are records of project intent/work tracking. They are **not proof that an external XMR/MYZ settlement occurred**.
 
+## Seller onboarding
+
+New sellers can start with **Seller Free — €0**. Creating a seller account does **not** require a credit card or payment method.
+
+```text
+Register seller
+      ↓
+Seller Free — €0
+      ↓
+No credit card required
+      ↓
+Profile / catalog setup
+      ↓
+Explicit upgrade
+      ↓
+Payment method required
+      ↓
+Paid plan
+```
+
+The current seller API exposes `GET /api/seller/plans`, where the free plan reports `creditCardRequired: false`. Seller registration defaults to `sellerPlan: free` and `sellerPaymentMethodStatus: not_required`.
+
+A payment method becomes relevant only when the seller explicitly requests an upgrade. Paid billing is currently **not enabled**: `POST /api/seller/upgrade` fails closed with `SELLER_BILLING_PROVIDER_NOT_CONFIGURED` until a reviewed billing provider is connected. The Marketplace API must not accept or persist raw card numbers, CVV/CVC, or equivalent card credentials.
+
+In product copy, the intended message is:
+
+> **Start selling for free. No credit card required.**  
+> Upgrade when you're ready; add a payment method only when you choose a paid plan.
+
 ## MYZ conversion gateway
 
 A fail-closed conversion gateway is under development for a future external-provider settlement model. It separates quote, provider fee, MyZubster service fee, settlement evidence and audit events.
