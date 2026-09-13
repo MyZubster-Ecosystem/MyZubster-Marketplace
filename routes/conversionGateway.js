@@ -38,7 +38,12 @@ router.post('/convert', async (req, res) => {
     const result = await ConversionGatewayService.executeQuote(req.body || {}, { userId: req.user.id });
     return res.status(200).json({ success: true, data: result });
   } catch (error) {
-    const clientCodes = ['INVALID_CONVERSION_REQUEST', 'CONVERSION_QUOTE_NOT_FOUND', 'CONVERSION_ALREADY_SETTLED'];
+    const clientCodes = [
+      'INVALID_CONVERSION_REQUEST',
+      'CONVERSION_QUOTE_NOT_FOUND',
+      'CONVERSION_QUOTE_EXPIRED',
+      'CONVERSION_ALREADY_SETTLED'
+    ];
     const status = clientCodes.includes(error.code) ? 400 : 503;
     return res.status(status).json({
       success: false,
