@@ -8,7 +8,7 @@ The repair preview engine answers a narrow operator question:
 Given this redemption ID, what repair would be considered, what evidence is still missing, and would the system block or allow a reviewed next step?
 ```
 
-It never mutates redemption state, reservations, provider settlement, or the canonical MYZ ledger.
+It never mutates redemption state, reservations, provider settlement, worker jobs, or the canonical MYZ ledger.
 
 ## Endpoint
 
@@ -45,7 +45,8 @@ The public operator endpoint does not accept operator-supplied booleans such as:
 ```json
 {
   "providerSettled": false,
-  "canonicalDebitExists": false
+  "canonicalDebitExists": false,
+  "workerActive": false
 }
 ```
 
@@ -56,20 +57,21 @@ A trusted evidence object must be produced by an internal integration and includ
 ```json
 {
   "verified": true,
-  "source": "provider-or-ledger-adapter",
+  "source": "reviewed-evidence-adapter",
   "checkedAt": "2026-09-13T03:00:00.000Z",
   "status": "settled"
 }
 ```
 
-The preview can now aggregate two trusted read-only sources when explicitly configured:
+The preview can aggregate three independent read-only sources when explicitly configured:
 
 ```text
 canonical MYZ ledger evidence adapter
 provider settlement evidence adapter
+in-flight/worker operation evidence adapter
 ```
 
-Worker/in-flight evidence is still separate and is required for release-oriented paths such as stale reservations.
+No one source substitutes for another.
 
 ## Trusted canonical MYZ ledger evidence
 
@@ -109,6 +111,39 @@ A provider lookup is not the same thing as settlement verification. `providerSet
 
 See `MYZ_PROVIDER_SETTLEMENT_EVIDENCE.md` for the read-only contract.
 
+## Trusted in-flight/worker evidence
+
+The worker adapter is disabled unless both enablement and approval flags plus a reviewed evidence URL are configured.
+
+It queries only:
+
+```text
+GET /operations/lookup
+```
+
+and can populate:
+
+```text
+inFlightOperationStatus
+workerOperationStatus
+```
+
+Source worker states `queued`, `running` and `retrying` normalize to:
+
+```text
+inFlightOperationStatus = active
+```
+
+while `not_found`, `completed`, `failed` and `cancelled` normalize to:
+
+```text
+inFlightOperationStatus = none
+```
+
+The raw worker state, operation ID, attempt metadata, lease expiry and retry timing remain attached as evidence metadata. The adapter cannot cancel or retry jobs.
+
+See `MYZ_INFLIGHT_OPERATION_EVIDENCE.md` for the read-only contract.
+
 ## Semantic safety checks
 
 The engine does not merely count evidence objects. It also checks whether their verified status is safe for the proposed repair.
@@ -121,15 +156,17 @@ canonicalDebitStatus = not_found/none
 inFlightOperationStatus = none
 ```
 
-If all three evidence objects exist but provider status is `settled`, the preview returns:
+If all three evidence objects exist but provider status is `settled` or worker status normalizes to `active`, the preview returns:
 
 ```text
 decision = WOULD_BLOCK
 missingEvidence = []
-evidenceConflicts = [providerSettlementStatus=settled]
+evidenceConflicts = [...]
 ```
 
 This prevents a fully populated but dangerous evidence set from enabling review of a reservation release.
+
+A terminal worker result alone never proves release safety. Provider settlement and canonical ledger evidence must still independently satisfy their own requirements.
 
 ## Example: settled but not reconciled
 
@@ -140,7 +177,7 @@ providerSettlementVerification = settled and matching
 canonicalDebitStatus = independently checked
 ```
 
-The provider and canonical sides can now be supplied automatically by their respective trusted read-only adapters when explicitly enabled.
+The provider and canonical sides can be supplied automatically by their respective trusted read-only adapters when explicitly enabled.
 
 ## Unknown findings
 
@@ -162,6 +199,7 @@ The preview service and evidence adapters use read-only queries. They cannot:
 - write or reverse a canonical MYZ entry;
 - retry external settlement;
 - issue a provider refund/reversal;
+- cancel or retry worker jobs;
 - mark a redemption reconciled;
 - alter evidence.
 
