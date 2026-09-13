@@ -7,12 +7,13 @@ const ALLOWED_STATUSES = new Set([
   'queued',
   'running',
   'retrying',
+  'recovery_required',
   'completed',
   'failed',
   'cancelled'
 ]);
 
-const ACTIVE_STATUSES = new Set(['queued', 'running', 'retrying']);
+const ACTIVE_STATUSES = new Set(['queued', 'running', 'retrying', 'recovery_required']);
 
 class MyzInFlightOperationEvidenceAdapter {
   constructor(options = {}) {
