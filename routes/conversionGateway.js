@@ -7,6 +7,7 @@ const ConversionGatewayService = require('../services/conversionGatewayService')
 const MyzAssetIdentityService = require('../services/myzAssetIdentityService');
 const MyzRedemptionReconciliationService = require('../services/myzRedemptionReconciliationService');
 const MyzReconciliationReportService = require('../services/myzReconciliationReportService');
+const { listRunbooks, getRunbook } = require('../services/myzReconciliationRunbookService');
 
 // Operator reconciliation endpoints use a separate service/operator token rather than
 // end-user JWT authentication. They are intentionally read-only.
@@ -24,6 +25,22 @@ router.get('/operator/reconciliation', requireDatabaseReady, requireMyzReconcili
       error: error.message
     });
   }
+});
+
+router.get('/operator/reconciliation/runbooks', requireDatabaseReady, requireMyzReconciliationOperator, (req, res) => {
+  return res.json({ success: true, data: listRunbooks() });
+});
+
+router.get('/operator/reconciliation/runbooks/:code', requireDatabaseReady, requireMyzReconciliationOperator, (req, res) => {
+  const runbook = getRunbook(req.params.code);
+  if (!runbook) {
+    return res.status(404).json({
+      success: false,
+      code: 'MYZ_RECONCILIATION_RUNBOOK_NOT_FOUND',
+      error: 'No reconciliation runbook exists for this finding code'
+    });
+  }
+  return res.json({ success: true, data: runbook });
 });
 
 router.get('/operator/reconciliation/:redemptionId', requireDatabaseReady, requireMyzReconciliationOperator, async (req, res) => {
