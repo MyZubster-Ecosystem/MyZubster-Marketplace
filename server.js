@@ -3,6 +3,7 @@ const mongoose = require('mongoose');
 const cors = require('cors');
 const path = require('path');
 const { isDatabaseReady } = require('./middleware/databaseReady');
+const myzWorkerLeaseRecoverySweeper = require('./services/myzWorkerLeaseRecoverySweeperService');
 
 mongoose.set('bufferCommands', false);
 
@@ -188,10 +189,14 @@ async function startServer(options = {}) {
         console.log(`✅ Readiness: http://localhost:${port}/api/ready`);
     });
     setupWebSocket(server);
+    server.on('close', () => myzWorkerLeaseRecoverySweeper.stop());
 
     try {
         await mongoose.connect(mongoUri, { serverSelectionTimeoutMS });
         console.log('✅ MongoDB connesso');
+        if (myzWorkerLeaseRecoverySweeper.start()) {
+            console.log('🛡️ MYZ worker lease recovery sweeper enabled');
+        }
     } catch (error) {
         console.error('❌ MongoDB non disponibile; auth e pagamenti restano bloccati:', error.message);
     }
