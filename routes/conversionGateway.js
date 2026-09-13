@@ -7,8 +7,21 @@ const ConversionGatewayService = require('../services/conversionGatewayService')
 const MyzAssetIdentityService = require('../services/myzAssetIdentityService');
 const MyzRedemptionReconciliationService = require('../services/myzRedemptionReconciliationService');
 const MyzReconciliationReportService = require('../services/myzReconciliationReportService');
+const MyzCanonicalLedgerEvidenceAdapter = require('../services/myzCanonicalLedgerEvidenceAdapter');
 const { listRunbooks, getRunbook } = require('../services/myzReconciliationRunbookService');
 const { buildRepairPreview } = require('../services/myzReconciliationRepairPreviewService');
+
+function getCanonicalLedgerEvidenceAdapter() {
+  if (process.env.MYZ_RECONCILIATION_LEDGER_EVIDENCE_ENABLED !== 'true') return null;
+  if (process.env.MYZ_RECONCILIATION_LEDGER_EVIDENCE_APPROVED !== 'true') return null;
+  if (!process.env.MYZ_LEDGER_API_URL) return null;
+  return new MyzCanonicalLedgerEvidenceAdapter({
+    baseUrl: process.env.MYZ_LEDGER_API_URL,
+    apiKey: process.env.MYZ_LEDGER_API_KEY || null,
+    reviewed: true,
+    timeoutMs: process.env.MYZ_LEDGER_API_TIMEOUT_MS || 8000
+  });
+}
 
 // Operator reconciliation endpoints use a separate service/operator token rather than
 // end-user JWT authentication. They are intentionally read-only.
@@ -56,9 +69,28 @@ router.get('/operator/reconciliation/:redemptionId/repair-preview', requireDatab
         error: 'No redemption or reservation record was found'
       });
     }
-    // v1 intentionally supplies no operator-provided evidence. Only trusted internal
-    // evidence adapters may satisfy repair prerequisites in a future revision.
-    const preview = buildRepairPreview(report);
+
+    let trustedEvidence = {};
+    const evidenceAdapters = [];
+    const ledgerEvidenceAdapter = getCanonicalLedgerEvidenceAdapter();
+    if (ledgerEvidenceAdapter) {
+      try {
+        trustedEvidence = await ledgerEvidenceAdapter.collect(report);
+        evidenceAdapters.push({ source: 'canonical-myz-ledger-api', status: 'verified', checkedAt: new Date().toISOString() });
+      } catch (error) {
+        evidenceAdapters.push({
+          source: 'canonical-myz-ledger-api',
+          status: 'unavailable',
+          checkedAt: new Date().toISOString(),
+          code: error.code || 'MYZ_LEDGER_EVIDENCE_UNAVAILABLE'
+        });
+      }
+    } else {
+      evidenceAdapters.push({ source: 'canonical-myz-ledger-api', status: 'disabled' });
+    }
+
+    const preview = buildRepairPreview(report, trustedEvidence);
+    preview.evidenceAdapters = evidenceAdapters;
     return res.json({ success: true, data: preview });
   } catch (error) {
     const status = error.code === 'INVALID_MYZ_REPAIR_PREVIEW_REQUEST' ? 400 : 503;
