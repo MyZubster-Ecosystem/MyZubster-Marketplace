@@ -3,6 +3,7 @@ const router = express.Router();
 const authenticate = require('../middleware/auth');
 const { requireDatabaseReady } = require('../middleware/databaseReady');
 const ConversionGatewayService = require('../services/conversionGatewayService');
+const MyzAssetIdentityService = require('../services/myzAssetIdentityService');
 
 router.use(authenticate, requireDatabaseReady);
 
@@ -13,11 +14,16 @@ router.get('/capabilities', (req, res) => {
       supportedAssets: ConversionGatewayService.listSupportedAssets(),
       configuredProviders: ConversionGatewayService.listProviders(),
       candidateProviders: ConversionGatewayService.listCandidateProviders(),
+      myz: MyzAssetIdentityService.getStatus(),
       executionMode: 'external_authorized_provider_only',
       custody: false,
       internalExchange: false
     }
   });
+});
+
+router.get('/myz-status', (req, res) => {
+  return res.json({ success: true, data: MyzAssetIdentityService.getStatus() });
 });
 
 router.post('/provider-probe', async (req, res) => {
