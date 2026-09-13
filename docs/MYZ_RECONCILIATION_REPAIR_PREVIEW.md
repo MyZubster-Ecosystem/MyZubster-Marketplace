@@ -34,9 +34,9 @@ WOULD_ALLOW_REVIEW
 
 `WOULD_ALLOW_NO_ACTION` means the current local reconciliation state is internally consistent and no repair is proposed.
 
-`WOULD_BLOCK` means one or more independent evidence requirements are missing or a trusted evidence adapter could not verify the required condition.
+`WOULD_BLOCK` means one or more independent evidence requirements are missing **or trusted evidence conflicts with the safety conditions for the proposed repair**.
 
-`WOULD_ALLOW_REVIEW` means all evidence requirements supplied to the preview engine by trusted internal adapters are verified, sourced and timestamped. It still does **not** execute a repair and does not grant authority to do so.
+`WOULD_ALLOW_REVIEW` means all required evidence supplied by trusted internal adapters is verified, sourced, timestamped and semantically compatible. It still does **not** execute a repair and does not grant authority to do so.
 
 ## Fail-closed evidence model
 
@@ -57,36 +57,30 @@ A trusted evidence object must be produced by an internal integration and includ
 {
   "verified": true,
   "source": "provider-or-ledger-adapter",
-  "checkedAt": "2026-09-13T03:00:00.000Z"
+  "checkedAt": "2026-09-13T03:00:00.000Z",
+  "status": "settled"
 }
 ```
 
+The preview can now aggregate two trusted read-only sources when explicitly configured:
+
+```text
+canonical MYZ ledger evidence adapter
+provider settlement evidence adapter
+```
+
+Worker/in-flight evidence is still separate and is required for release-oriented paths such as stale reservations.
+
 ## Trusted canonical MYZ ledger evidence
 
-The first trusted evidence adapter is read-only and queries the reviewed core MYZ ledger API. It is disabled unless both flags are explicit:
+The canonical adapter is disabled unless both flags are explicit:
 
 ```text
 MYZ_RECONCILIATION_LEDGER_EVIDENCE_ENABLED=true
 MYZ_RECONCILIATION_LEDGER_EVIDENCE_APPROVED=true
 ```
 
-It reuses:
-
-```text
-MYZ_LEDGER_API_URL
-MYZ_LEDGER_API_KEY
-MYZ_LEDGER_API_TIMEOUT_MS
-```
-
-The core API provides a read-only lookup contract:
-
-```text
-GET /api/v1/myz/entries/lookup
-```
-
-using an authorized account plus immutable selectors such as canonical entry ID, redemption ID, idempotency key or provider transaction reference.
-
-The adapter can establish evidence keys including:
+It can populate:
 
 ```text
 canonicalDebitStatus
@@ -96,36 +90,57 @@ canonicalDebitOrReversalStatus
 postDebitReversalStatus
 ```
 
-The returned evidence includes the real canonical entry ID when found, recorded/reversed state, reversal entry reference and ledger revision. The Marketplace does not synthesize these values.
+A completed lookup with no debit can verify `canonicalDebitStatus=not_found`, but it does not become a verified debit identity.
 
-A successful lookup that finds no debit can verify a **status check** such as `canonicalDebitStatus=not_found`, but it does not count as a verified debit identity for `canonicalDebitLookup` or `canonicalDebitVerification`.
+## Trusted provider settlement evidence
 
-If the core evidence adapter is disabled or unavailable, the preview remains fail-closed and reports the adapter status without granting any repair path.
+The provider adapter is disabled unless its enablement and approval flags, provider name and evidence URL are explicitly configured.
 
-## Example: stale reservation
-
-For `STALE_RESERVATION`, the preview requires independent confirmation of:
+It can populate:
 
 ```text
 providerSettlementStatus
-canonicalDebitStatus
-inFlightOperationStatus
+providerSettlementVerification
+providerReversalStatus
+providerSettlementOrReversalStatus
 ```
 
-The canonical ledger adapter can now satisfy `canonicalDebitStatus` from the core ledger, but the preview still blocks until provider and in-flight evidence are also supplied by trusted adapters.
+A provider lookup is not the same thing as settlement verification. `providerSettlementVerification` is true only when status is `settled` and the provider transaction reference, recipient amount and destination asset match Marketplace expectations.
 
-The reservation age alone is never sufficient evidence for release.
+See `MYZ_PROVIDER_SETTLEMENT_EVIDENCE.md` for the read-only contract.
+
+## Semantic safety checks
+
+The engine does not merely count evidence objects. It also checks whether their verified status is safe for the proposed repair.
+
+Example: `STALE_RESERVATION` requires:
+
+```text
+providerSettlementStatus = not_found/none
+canonicalDebitStatus = not_found/none
+inFlightOperationStatus = none
+```
+
+If all three evidence objects exist but provider status is `settled`, the preview returns:
+
+```text
+decision = WOULD_BLOCK
+missingEvidence = []
+evidenceConflicts = [providerSettlementStatus=settled]
+```
+
+This prevents a fully populated but dangerous evidence set from enabling review of a reservation release.
 
 ## Example: settled but not reconciled
 
 For `SETTLED_NOT_RECONCILED`, the engine requires:
 
 ```text
-providerSettlementVerification
-canonicalDebitStatus
+providerSettlementVerification = settled and matching
+canonicalDebitStatus = independently checked
 ```
 
-The canonical side can be verified automatically when the evidence adapter is enabled. Provider settlement still requires its own independent trusted evidence source.
+The provider and canonical sides can now be supplied automatically by their respective trusted read-only adapters when explicitly enabled.
 
 ## Unknown findings
 
@@ -141,13 +156,14 @@ The engine never guesses a repair policy for new failure classes.
 
 ## Non-mutation guarantee
 
-The preview service and canonical evidence adapter use read-only queries. They cannot:
+The preview service and evidence adapters use read-only queries. They cannot:
 
 - release a reservation;
 - write or reverse a canonical MYZ entry;
 - retry external settlement;
+- issue a provider refund/reversal;
 - mark a redemption reconciled;
-- alter provider evidence.
+- alter evidence.
 
 Every preview includes:
 
