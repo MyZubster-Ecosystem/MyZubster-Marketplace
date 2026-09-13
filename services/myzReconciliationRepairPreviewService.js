@@ -28,8 +28,58 @@ const EVIDENCE_REQUIREMENTS = Object.freeze({
   CANONICAL_DEBIT_WITHOUT_RECONCILED_REDEMPTION: ['providerSettlementVerification', 'canonicalDebitVerification', 'postDebitReversalStatus']
 });
 
+const SAFE_EVIDENCE_STATUS = Object.freeze({
+  ORPHAN_RESERVATION: {
+    providerSettlementStatus: ['not_found'],
+    canonicalDebitStatus: ['not_found'],
+    inFlightOperationStatus: ['none']
+  },
+  STALE_RESERVATION: {
+    providerSettlementStatus: ['not_found'],
+    canonicalDebitStatus: ['not_found'],
+    inFlightOperationStatus: ['none']
+  },
+  REDEMPTION_ROLLED_BACK: {
+    providerReversalStatus: ['reversed', 'refunded'],
+    canonicalDebitOrReversalStatus: ['not_found', 'reversed']
+  },
+  ROLLBACK_WITH_UNRELEASED_RESERVATION: {
+    providerSettlementOrReversalStatus: ['not_found', 'reversed', 'refunded'],
+    canonicalDebitOrReversalStatus: ['not_found', 'reversed']
+  },
+  CANONICAL_DEBIT_WITHOUT_RECONCILED_REDEMPTION: {
+    providerSettlementVerification: ['settled'],
+    canonicalDebitVerification: ['recorded'],
+    postDebitReversalStatus: ['not_reversed']
+  },
+  SETTLED_NOT_RECONCILED: {
+    providerSettlementVerification: ['settled']
+  },
+  RECONCILED_WITHOUT_COMMITTED_RESERVATION: {
+    providerSettlementVerification: ['settled'],
+    canonicalDebitVerification: ['recorded']
+  },
+  COMMITTED_WITHOUT_CANONICAL_ENTRY: {
+    canonicalDebitLookup: ['recorded']
+  }
+});
+
 function isVerified(value) {
   return value && typeof value === 'object' && value.verified === true && value.source && value.checkedAt;
+}
+
+function semanticEvidenceConflicts(code, trustedEvidence = {}) {
+  const rules = SAFE_EVIDENCE_STATUS[code] || {};
+  const conflicts = [];
+  for (const [key, allowed] of Object.entries(rules)) {
+    const value = trustedEvidence[key];
+    if (!isVerified(value)) continue;
+    const status = String(value.status || '').trim().toLowerCase();
+    if (!allowed.includes(status)) {
+      conflicts.push({ key, status: status || 'unknown', allowed });
+    }
+  }
+  return conflicts;
 }
 
 function findingPreview(finding, trustedEvidence = {}) {
@@ -42,23 +92,30 @@ function findingPreview(finding, trustedEvidence = {}) {
       decision: 'WOULD_BLOCK',
       automatedRepairAllowed: false,
       missingEvidence: ['reviewed_runbook'],
+      evidenceConflicts: [],
       reason: 'No reviewed repair runbook exists for this finding.'
     };
   }
 
   const requirements = EVIDENCE_REQUIREMENTS[code] || [];
   const missingEvidence = requirements.filter(key => !isVerified(trustedEvidence[key]));
+  const evidenceConflicts = semanticEvidenceConflicts(code, trustedEvidence);
+  const blocked = missingEvidence.length > 0 || evidenceConflicts.length > 0;
+
   return {
     code,
     proposedAction: ACTIONS[code] || 'MANUAL_INVESTIGATION',
-    decision: missingEvidence.length ? 'WOULD_BLOCK' : 'WOULD_ALLOW_REVIEW',
+    decision: blocked ? 'WOULD_BLOCK' : 'WOULD_ALLOW_REVIEW',
     automatedRepairAllowed: false,
     missingEvidence,
+    evidenceConflicts,
     preconditions: runbook.verify,
     prohibitedActions: runbook.never,
     reason: missingEvidence.length
       ? 'Independent evidence required by the runbook is missing or not freshly verified.'
-      : 'Required evidence objects are present, but execution still requires a separately privileged reviewed repair command.'
+      : evidenceConflicts.length
+        ? 'Trusted evidence is present but its verified state conflicts with the safety preconditions for the proposed repair.'
+        : 'Required evidence is present and semantically compatible, but execution still requires a separately privileged reviewed repair command.'
   };
 }
 
@@ -80,6 +137,7 @@ function buildRepairPreview(report, trustedEvidence = {}) {
       mutatesState: false,
       automatedRepairAllowed: false,
       missingEvidence: [],
+      evidenceConflicts: [],
       findings: [],
       note: 'Current Marketplace reconciliation state is internally consistent. No repair action is proposed.'
     };
@@ -87,6 +145,7 @@ function buildRepairPreview(report, trustedEvidence = {}) {
 
   const previews = findings.map(finding => findingPreview(finding, trustedEvidence));
   const missingEvidence = [...new Set(previews.flatMap(item => item.missingEvidence || []))];
+  const evidenceConflicts = previews.flatMap(item => (item.evidenceConflicts || []).map(conflict => ({ code: item.code, ...conflict })));
   const blocked = previews.some(item => item.decision === 'WOULD_BLOCK');
 
   return {
@@ -98,6 +157,7 @@ function buildRepairPreview(report, trustedEvidence = {}) {
     mutatesState: false,
     automatedRepairAllowed: false,
     missingEvidence,
+    evidenceConflicts,
     currentState: {
       redemption: report.redemption?.state || null,
       reservation: report.reservation?.state || null,
@@ -106,9 +166,17 @@ function buildRepairPreview(report, trustedEvidence = {}) {
     },
     findings: previews,
     note: blocked
-      ? 'Preview is fail-closed. No mutation is available while required independent evidence is missing.'
+      ? 'Preview is fail-closed. No mutation is available while required evidence is missing or conflicts with repair safety preconditions.'
       : 'Preview prerequisites appear satisfied by trusted evidence, but this endpoint still performs no mutation and grants no repair authority.'
   };
 }
 
-module.exports = { ACTIONS, EVIDENCE_REQUIREMENTS, isVerified, findingPreview, buildRepairPreview };
+module.exports = {
+  ACTIONS,
+  EVIDENCE_REQUIREMENTS,
+  SAFE_EVIDENCE_STATUS,
+  isVerified,
+  semanticEvidenceConflicts,
+  findingPreview,
+  buildRepairPreview
+};
