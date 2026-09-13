@@ -33,6 +33,60 @@ The gateway is deliberately **fail-closed**. No executable quote or settlement i
 
 Support in the API means the asset is part of the gateway schema. It does **not** mean that a live MYZ/EUR, MYZ/USDC or MYZ/XMR market exists or that conversion is currently available.
 
+## First technical provider candidate: Coinbase Advanced Trade
+
+As of the 2026-09-13 integration review, Coinbase was selected as the first **technical candidate** to probe because:
+
+- Coinbase states that Coinbase Luxembourg S.A. has MiCA authorization from Luxembourg's CSSF and provides crypto-asset services across the EEA;
+- Coinbase documents an Advanced Trade REST API;
+- Coinbase documents a static Advanced Trade sandbox that returns mocked responses in production-compatible formats.
+
+References:
+
+- https://help.coinbase.com/en/coinbase/other-topics/other/mica-cblu
+- https://docs.cdp.coinbase.com/coinbase-app/advanced-trade-apis/overview
+- https://docs.cdp.coinbase.com/coinbase-app/advanced-trade-apis/sandbox
+
+This is **not** approval to use Coinbase for MYZ settlement and is not a representation that Coinbase supports MYZ. Regulatory status, commercial eligibility, supported assets, API terms and the exact legal entity serving a deployment must be re-verified before production use.
+
+### Current blocker: MYZ is not an externally mapped provider asset
+
+The Marketplace currently treats MYZ as an internal reward/accounting ledger. A third-party exchange cannot execute `MYZ/EUR`, `MYZ/USDC` or `MYZ/XMR` unless MYZ has an externally identifiable and provider-supported asset/market or another legally reviewed redemption/settlement mechanism exists.
+
+For that reason, the Coinbase candidate adapter refuses every MYZ pair unless `CONVERSION_MYZ_EXTERNAL_ASSET_ID` is explicitly configured. Even with an asset ID configured, candidate mode remains non-executable and only probes provider market availability.
+
+Do **not** set an invented symbol merely to bypass this guard. An external asset mapping must correspond to a real, reviewed asset supported by the provider.
+
+## Candidate provider probing
+
+Candidate probing is deliberately separate from the authorized execution-provider registry.
+
+Enable the Coinbase candidate only for technical readiness checks:
+
+```text
+CONVERSION_COINBASE_CANDIDATE_ENABLED=true
+CONVERSION_COINBASE_SANDBOX=true
+CONVERSION_MYZ_EXTERNAL_ASSET_ID=
+```
+
+`GET /api/conversion/capabilities` reports candidate providers separately from configured execution providers.
+
+`POST /api/conversion/provider-probe` checks whether a candidate can represent a pair without making it eligible for settlement.
+
+Example:
+
+```json
+{
+  "provider": "coinbase-advanced-trade",
+  "from": "MYZ",
+  "to": "EUR"
+}
+```
+
+Without a reviewed external MYZ asset mapping, the probe fails with `MYZ_EXTERNAL_ASSET_NOT_CONFIGURED`.
+
+Coinbase sandbox mode remains explicitly non-executable because its documented responses are static/mocked. It is useful for validating request/response plumbing, not for proving market liquidity or settlement.
+
 ## Fee model
 
 The gateway separates two fees:
@@ -56,7 +110,11 @@ No fee should be hidden in the gateway response.
 
 ### `GET /api/conversion/capabilities`
 
-Returns supported assets, configured provider names and the execution model.
+Returns supported assets, configured execution-provider names, candidate-provider names and the execution model.
+
+### `POST /api/conversion/provider-probe`
+
+Performs a non-executable candidate-provider readiness check. A successful probe is **not** an executable quote and must not be shown to a user as a guaranteed exchange price.
 
 ### `POST /api/conversion/quote`
 
@@ -107,7 +165,7 @@ Execution requires:
 - a configured provider implementing `executeQuote`;
 - provider-returned settlement evidence.
 
-The HTTP provider adapter sends `Idempotency-Key: myz-conversion-<quoteId>` on execution requests. The provider must honor idempotency for safe retry semantics.
+The generic HTTP provider adapter sends `Idempotency-Key: myz-conversion-<quoteId>` on execution requests. The provider must honor idempotency for safe retry semantics.
 
 The gateway never generates a synthetic provider transaction ID. Settlement becomes `settled` only when the provider returns a transaction identifier and settlement timestamp.
 
@@ -119,9 +177,9 @@ Raw provider evidence is not exposed by this endpoint. A SHA-256 evidence hash i
 
 ## Provider adapter contract
 
-The first adapter is a generic HTTP boundary configured through environment variables. It is deliberately not tied to or represented as any specific licensed provider.
+The execution adapter is a generic HTTP boundary configured through environment variables. It is deliberately not tied to or represented as any specific licensed provider.
 
-A provider adapter implements:
+An execution provider adapter implements:
 
 ```js
 async getQuote({ from, to, amount, requestedBy })
@@ -152,7 +210,7 @@ Provider responses must distinguish indicative information from executable quote
 
 ## Provider enablement
 
-The HTTP adapter is registered only when all required deployment conditions are explicit:
+The generic HTTP execution adapter is registered only when all required deployment conditions are explicit:
 
 ```text
 CONVERSION_PROVIDER_ENABLED=true
@@ -170,16 +228,17 @@ Before live conversion is enabled, the project should document and review:
 
 1. which legal entity provides the exchange service;
 2. whether the provider is authorized for the relevant jurisdiction and asset/service pair;
-3. KYC/AML responsibilities and data flows;
-4. custody and safeguarding boundaries;
-5. fee and spread disclosure;
-6. quote expiry and execution-price rules;
-7. refund, failure and dispute handling;
-8. sanctions and restricted-jurisdiction handling;
-9. auditable settlement evidence;
-10. privacy and retention requirements;
-11. provider idempotency and duplicate-execution controls;
-12. reconciliation between provider settlement and marketplace accounting.
+3. whether MYZ itself is externally issued/admitted/tradable in a legally compliant way;
+4. KYC/AML responsibilities and data flows;
+5. custody and safeguarding boundaries;
+6. fee and spread disclosure;
+7. quote expiry and execution-price rules;
+8. refund, failure and dispute handling;
+9. sanctions and restricted-jurisdiction handling;
+10. auditable settlement evidence;
+11. privacy and retention requirements;
+12. provider idempotency and duplicate-execution controls;
+13. reconciliation between provider settlement and marketplace accounting.
 
 ## Design principle
 
