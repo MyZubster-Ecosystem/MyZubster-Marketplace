@@ -16,6 +16,7 @@ router.get('/capabilities', (req, res) => {
       configuredProviders: ConversionGatewayService.listProviders(),
       candidateProviders: ConversionGatewayService.listCandidateProviders(),
       redemptionProviders: MyzRedemptionReconciliationService.listProviders(),
+      ledgerAdapterConfigured: Boolean(MyzRedemptionReconciliationService.getLedgerAdapter()),
       myz: MyzAssetIdentityService.getStatus(),
       executionMode: 'external_authorized_provider_only',
       custody: false,
@@ -90,7 +91,9 @@ router.post('/redemption/start', async (req, res) => {
       'MYZ_SETTLEMENT_CONFIGURATION_INCOMPLETE',
       'MYZ_REDEMPTION_MODE_REQUIRED',
       'INVALID_MYZ_REDEMPTION_REQUEST',
-      'INVALID_MYZ_REDEMPTION_QUOTE'
+      'INVALID_MYZ_REDEMPTION_QUOTE',
+      'INVALID_MYZ_LEDGER_AMOUNT',
+      'INSUFFICIENT_MYZ_INTERNAL_CREDIT'
     ];
     const status = clientCodes.includes(error.code) ? 400 : 503;
     return res.status(status).json({
