@@ -5,6 +5,7 @@ const { applyMyZubsterFee, calculateFee } = require('../services/conversionFeeEn
 const HttpConversionProviderAdapter = require('../services/providers/httpConversionProviderAdapter');
 const CoinbaseAdvancedTradeCandidateAdapter = require('../services/providers/coinbaseAdvancedTradeCandidateAdapter');
 const MyzRedemptionProviderContract = require('../services/providers/myzRedemptionProviderContract');
+const MyzInternalLedgerAdapter = require('../services/myzInternalLedgerAdapter');
 const { MyzAssetIdentityService } = require('../services/myzAssetIdentityService');
 const { MyzRedemptionReconciliationService } = require('../services/myzRedemptionReconciliationService');
 
@@ -146,8 +147,24 @@ test('redemption provider contract validates quote and settlement evidence', () 
   assert.equal(evidence.toAsset, 'EUR');
 });
 
+test('canonical MYZ ledger adapter requires explicit review', () => {
+  assert.throws(
+    () => new MyzInternalLedgerAdapter({ baseUrl: 'https://ledger.invalid', reviewed: false }),
+    error => error.code === 'MYZ_LEDGER_ADAPTER_NOT_REVIEWED'
+  );
+});
+
+test('canonical MYZ ledger adapter uses deterministic marketplace account mapping', () => {
+  const adapter = new MyzInternalLedgerAdapter({
+    baseUrl: 'https://ledger.invalid',
+    reviewed: true,
+    accountPrefix: 'marketplace:user:'
+  });
+  assert.equal(adapter.accountIdForUser('abc-123'), 'marketplace:user:abc-123');
+});
+
 test('redemption reconciliation state machine allows only ordered transitions', () => {
-  const service = new MyzRedemptionReconciliationService();
+  const service = new MyzRedemptionReconciliationService({ skipEnvConfiguration: true });
   assert.equal(service.assertTransition('quote_accepted', 'credit_reserved'), true);
   assert.equal(service.assertTransition('credit_reserved', 'settlement_requested'), true);
   assert.equal(service.assertTransition('settlement_requested', 'settled'), true);
@@ -164,9 +181,17 @@ test('redemption reconciliation state machine allows only ordered transitions', 
 });
 
 test('redemption reconciliation refuses incomplete provider adapters', () => {
-  const service = new MyzRedemptionReconciliationService();
+  const service = new MyzRedemptionReconciliationService({ skipEnvConfiguration: true });
   assert.throws(
     () => service.registerProvider('broken-provider', { getRedemptionQuote() {} }),
     /missing methods/
+  );
+});
+
+test('redemption reconciliation refuses incomplete ledger adapters', () => {
+  const service = new MyzRedemptionReconciliationService({ skipEnvConfiguration: true });
+  assert.throws(
+    () => service.registerLedgerAdapter({ reserveInternalCredit() {} }),
+    /ledger adapter is missing methods/
   );
 });
