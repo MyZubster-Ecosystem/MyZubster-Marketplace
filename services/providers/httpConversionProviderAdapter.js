@@ -12,8 +12,11 @@ class HttpConversionProviderAdapter {
     if (!this.approved) throw new Error('Provider must be explicitly approved before registration');
   }
 
-  headers() {
-    return this.apiKey ? { Authorization: `Bearer ${this.apiKey}` } : {};
+  headers(extra = {}) {
+    return {
+      ...(this.apiKey ? { Authorization: `Bearer ${this.apiKey}` } : {}),
+      ...extra
+    };
   }
 
   async getQuote(request) {
@@ -51,7 +54,7 @@ class HttpConversionProviderAdapter {
       quoteId,
       requestedBy: requestedBy || undefined
     }, {
-      headers: this.headers(),
+      headers: this.headers({ 'Idempotency-Key': `myz-conversion-${quoteId}` }),
       timeout: this.timeoutMs,
       validateStatus: status => status >= 200 && status < 300
     });
