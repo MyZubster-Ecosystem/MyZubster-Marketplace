@@ -31,14 +31,18 @@ limit=100          # 1..500
 staleMinutes=15    # 1..10080
 ```
 
-The response includes:
+The response includes state counts, investigation totals, severity totals, an `investigation` subset and recent joined redemption/reservation rows.
 
-- state counts for redemption records;
-- state counts for reservation records;
-- number of rows requiring investigation;
-- high/medium/informational counts;
-- an `investigation` subset;
-- recent joined redemption/reservation rows.
+Each finding now carries its matching fail-closed operator runbook inline when a known runbook exists.
+
+### Runbook catalog
+
+```text
+GET /api/conversion/operator/reconciliation/runbooks
+GET /api/conversion/operator/reconciliation/runbooks/:code
+```
+
+Runbooks describe evidence to verify, permitted reviewed outcomes and actions that must never be taken automatically. They are guidance only; these endpoints expose no mutation capability.
 
 ### Single redemption report
 
@@ -46,7 +50,7 @@ The response includes:
 GET /api/conversion/operator/reconciliation/:redemptionId
 ```
 
-Returns the redemption record, linked reservation and deterministic assessment for that redemption ID.
+Returns the sanitized redemption record, linked reservation and deterministic assessment for that redemption ID.
 
 ## Findings
 
@@ -79,16 +83,19 @@ reservation.canonicalDebitEntryId = <real canonical entry id>
 
 A `failed` redemption after an attempted canonical debit is not automatically repaired by releasing the reservation. The debit may have reached the canonical ledger even if the Marketplace did not receive the response.
 
-The operator report highlights this condition so an operator can compare:
+The operator report highlights this condition so an operator can compare provider settlement evidence, Marketplace state and the canonical MYZ ledger before any corrective action is designed or executed.
+
+## Runbook safety boundary
+
+Every current runbook sets:
 
 ```text
-provider settlement evidence
-Marketplace redemption record
-Marketplace reservation record
-canonical MYZ ledger entry
+automatedRepairAllowed = false
 ```
 
-before any corrective action is designed or executed.
+The runbooks explicitly reject shortcuts such as releasing credit based only on age, inventing canonical entry IDs, issuing a second external settlement, or treating a local `failed`/`rolled_back` state as proof of provider or ledger state.
+
+The detailed procedures are documented in `docs/MYZ_RECONCILIATION_REPAIR_RUNBOOKS.md`.
 
 ## Read-only boundary
 
@@ -102,4 +109,4 @@ They cannot:
 - mark a redemption reconciled;
 - alter evidence hashes or provider transaction IDs.
 
-Corrective workflows should be designed per failure class and remain idempotent, auditable and fail-closed.
+Any future corrective command must use a separate privileged authorization boundary, explicit operator identity/reason, immutable audit evidence, idempotency, fresh provider and canonical-ledger verification, precondition checks and fail-closed handling for stale/ambiguous results.
