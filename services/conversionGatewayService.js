@@ -1,6 +1,7 @@
 const crypto = require('crypto');
 const ConversionAudit = require('../models/ConversionAudit');
 const HttpConversionProviderAdapter = require('./providers/httpConversionProviderAdapter');
+const CoinbaseAdvancedTradeCandidateAdapter = require('./providers/coinbaseAdvancedTradeCandidateAdapter');
 const { applyMyZubsterFee, normalizeDecimal } = require('./conversionFeeEngine');
 
 const SUPPORTED_ASSETS = Object.freeze(['MYZ', 'EUR', 'USDC', 'XMR']);
@@ -16,7 +17,9 @@ class ProviderUnavailableError extends Error {
 class ConversionGatewayService {
   constructor() {
     this.providers = new Map();
+    this.candidateProviders = new Map();
     this.configureProviderFromEnv();
+    this.configureCandidateProvidersFromEnv();
   }
 
   configureProviderFromEnv() {
@@ -35,12 +38,33 @@ class ConversionGatewayService {
     this.registerProvider(name, provider);
   }
 
+  configureCandidateProvidersFromEnv() {
+    if (process.env.CONVERSION_COINBASE_CANDIDATE_ENABLED !== 'true') return;
+    const name = 'coinbase-advanced-trade';
+    const sandbox = process.env.CONVERSION_COINBASE_SANDBOX === 'true';
+    const baseUrl = sandbox
+      ? 'https://api-sandbox.coinbase.com'
+      : 'https://api.coinbase.com';
+
+    this.registerCandidateProvider(name, new CoinbaseAdvancedTradeCandidateAdapter({
+      name,
+      baseUrl,
+      sandbox,
+      timeoutMs: process.env.CONVERSION_PROVIDER_TIMEOUT_MS || 8000,
+      myzExternalAssetId: process.env.CONVERSION_MYZ_EXTERNAL_ASSET_ID || ''
+    }));
+  }
+
   listSupportedAssets() {
     return [...SUPPORTED_ASSETS];
   }
 
   listProviders() {
     return [...this.providers.keys()];
+  }
+
+  listCandidateProviders() {
+    return [...this.candidateProviders.keys()];
   }
 
   registerProvider(name, provider) {
@@ -51,9 +75,22 @@ class ConversionGatewayService {
     this.providers.set(name, provider);
   }
 
+  registerCandidateProvider(name, provider) {
+    if (!name || typeof name !== 'string') throw new TypeError('Candidate provider name is required');
+    if (!provider || typeof provider.probePair !== 'function') {
+      throw new TypeError('Candidate provider must implement probePair(request)');
+    }
+    this.candidateProviders.set(name, provider);
+  }
+
   getProvider(name) {
     if (name) return this.providers.get(name) || null;
     return this.providers.values().next().value || null;
+  }
+
+  getCandidateProvider(name) {
+    if (name) return this.candidateProviders.get(name) || null;
+    return this.candidateProviders.values().next().value || null;
   }
 
   validateQuoteRequest({ from, to, amount }) {
@@ -78,6 +115,25 @@ class ConversionGatewayService {
     }
 
     return { from: normalizedFrom, to: normalizedTo, amount: normalizedAmount };
+  }
+
+  async probeCandidateProvider(input = {}) {
+    const from = String(input.from || '').trim().toUpperCase();
+    const to = String(input.to || '').trim().toUpperCase();
+    if (!SUPPORTED_ASSETS.includes(from) || !SUPPORTED_ASSETS.includes(to) || from === to) {
+      const error = new Error('Unsupported candidate provider pair');
+      error.code = 'UNSUPPORTED_CONVERSION_PAIR';
+      throw error;
+    }
+
+    const provider = this.getCandidateProvider(input.provider);
+    if (!provider) {
+      const error = new Error('Candidate provider is not configured');
+      error.code = 'CANDIDATE_PROVIDER_UNAVAILABLE';
+      throw error;
+    }
+
+    return provider.probePair({ from, to });
   }
 
   async createQuote(input, context = {}) {
