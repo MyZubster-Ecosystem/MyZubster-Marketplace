@@ -30,13 +30,13 @@ const EVIDENCE_REQUIREMENTS = Object.freeze({
 
 const SAFE_EVIDENCE_STATUS = Object.freeze({
   ORPHAN_RESERVATION: {
-    providerSettlementStatus: ['not_found'],
-    canonicalDebitStatus: ['not_found'],
+    providerSettlementStatus: ['not_found', 'none'],
+    canonicalDebitStatus: ['not_found', 'none'],
     inFlightOperationStatus: ['none']
   },
   STALE_RESERVATION: {
-    providerSettlementStatus: ['not_found'],
-    canonicalDebitStatus: ['not_found'],
+    providerSettlementStatus: ['not_found', 'none'],
+    canonicalDebitStatus: ['not_found', 'none'],
     inFlightOperationStatus: ['none']
   },
   REDEMPTION_ROLLED_BACK: {
@@ -75,9 +75,7 @@ function semanticEvidenceConflicts(code, trustedEvidence = {}) {
     const value = trustedEvidence[key];
     if (!isVerified(value)) continue;
     const status = String(value.status || '').trim().toLowerCase();
-    if (!allowed.includes(status)) {
-      conflicts.push({ key, status: status || 'unknown', allowed });
-    }
+    if (!allowed.includes(status)) conflicts.push({ key, status: status || 'unknown', allowed });
   }
   return conflicts;
 }
