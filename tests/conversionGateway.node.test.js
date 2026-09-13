@@ -4,6 +4,7 @@ const gateway = require('../services/conversionGatewayService');
 const { applyMyZubsterFee, calculateFee } = require('../services/conversionFeeEngine');
 const HttpConversionProviderAdapter = require('../services/providers/httpConversionProviderAdapter');
 const CoinbaseAdvancedTradeCandidateAdapter = require('../services/providers/coinbaseAdvancedTradeCandidateAdapter');
+const MyzRedemptionProviderContract = require('../services/providers/myzRedemptionProviderContract');
 const { MyzAssetIdentityService } = require('../services/myzAssetIdentityService');
 
 test('conversion gateway exposes supported assets', () => {
@@ -110,4 +111,36 @@ test('external MYZ asset mode requires network and asset identifier', () => {
   assert.equal(status.externallyTradable, true);
   assert.equal(status.externalAssetId, 'asset-123');
   assert.equal(status.network, 'example-network');
+});
+
+test('redemption provider contract requires explicit review', () => {
+  assert.throws(
+    () => new MyzRedemptionProviderContract({ name: 'candidate-redemption-provider', reviewed: false }),
+    error => error.code === 'MYZ_REDEMPTION_PROVIDER_NOT_REVIEWED'
+  );
+});
+
+test('redemption provider contract validates quote and settlement evidence', () => {
+  const provider = new MyzRedemptionProviderContract({ name: 'reviewed-provider', reviewed: true });
+  const quote = provider.validateQuote({
+    quoteId: 'rq-1',
+    fromAmount: '100',
+    toAsset: 'EUR',
+    grossRecipientAmount: '10',
+    expiresAt: new Date(Date.now() + 60000).toISOString(),
+    priceMethodology: 'documented-reference-v1'
+  });
+  assert.equal(quote.fromAsset, 'MYZ');
+  assert.equal(quote.executable, false);
+  assert.equal(quote.provider, 'reviewed-provider');
+
+  const evidence = provider.validateSettlementEvidence({
+    providerTransactionId: 'tx-1',
+    settledAt: new Date().toISOString(),
+    toAsset: 'EUR',
+    recipientAmount: '9.9',
+    evidence: { reference: 'provider-report-1' }
+  });
+  assert.equal(evidence.providerTransactionId, 'tx-1');
+  assert.equal(evidence.toAsset, 'EUR');
 });
