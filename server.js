@@ -46,6 +46,7 @@ const fiatPaymentRoutes = require('./routes/fiatPayment');
 const urbanCleaningRoutes = require('./routes/urbanCleaning');
 const conversionGatewayRoutes = require('./routes/conversionGateway');
 const myzWorkerOperationRoutes = require('./routes/myzWorkerOperations');
+const sellerPlanRoutes = require('./routes/sellerPlans');
 
 // Rotte API
 app.use('/api/auth', authRoutes);
@@ -78,6 +79,7 @@ app.use('/api/fiat-payment', fiatPaymentRoutes);
 app.use('/api/urban-cleaning', urbanCleaningRoutes);
 app.use('/api/conversion', conversionGatewayRoutes);
 app.use('/api/operations', myzWorkerOperationRoutes);
+app.use('/api/seller', sellerPlanRoutes);
 
 // Health check
 app.get('/api/health', (req, res) => {
