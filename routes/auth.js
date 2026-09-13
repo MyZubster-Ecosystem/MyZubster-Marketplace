@@ -25,6 +25,8 @@ function publicUser(user) {
     username: user.username,
     email: user.email,
     role: user.role,
+    sellerPlan: user.sellerPlan || 'free',
+    sellerPaymentMethodStatus: user.sellerPaymentMethodStatus || 'not_required',
     verified: user.verified,
     reputation: user.reputation
   };
@@ -35,16 +37,39 @@ router.post('/register', async (req, res) => {
     const username = typeof req.body?.username === 'string' ? req.body.username.trim() : '';
     const email = typeof req.body?.email === 'string' ? req.body.email.trim().toLowerCase() : '';
     const password = req.body?.password;
+    const requestedRole = req.body?.role === 'seller' ? 'seller' : 'cittadino';
     if (!validUsername(username) || !validEmail(email) || !validPassword(password)) {
       return res.status(400).json({
         error: 'Invalid registration data',
         code: 'INVALID_REGISTRATION_DATA'
       });
     }
-    const user = new User({ username, email, password });
+    // Seller onboarding is deliberately card-free. A payment method is requested only
+    // when the seller explicitly chooses a paid plan through the billing flow.
+    const user = new User({
+      username,
+      email,
+      password,
+      role: requestedRole,
+      sellerPlan: 'free',
+      sellerPaymentMethodStatus: 'not_required'
+    });
     await user.save();
     const token = jwt.sign({ id: user._id }, getJwtSecret(), { expiresIn: '24h' });
-    res.json({ success: true, data: { user: publicUser(user), token } });
+    res.json({
+      success: true,
+      data: {
+        user: publicUser(user),
+        token,
+        onboarding: requestedRole === 'seller' ? {
+          plan: 'free',
+          price: 0,
+          currency: 'EUR',
+          creditCardRequired: false,
+          upgradeRequiresPaymentMethod: true
+        } : undefined
+      }
+    });
   } catch (error) {
     if (!isDatabaseReady()) {
       return res.status(503).json({ error: 'Database temporarily unavailable', code: 'DATABASE_UNAVAILABLE' });
