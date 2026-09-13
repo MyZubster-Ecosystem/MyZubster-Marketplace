@@ -6,7 +6,7 @@ const MyzWorkerOperationSchema = new mongoose.Schema({
   status: {
     type: String,
     required: true,
-    enum: ['queued', 'running', 'retrying', 'completed', 'failed', 'cancelled'],
+    enum: ['queued', 'running', 'retrying', 'recovery_required', 'completed', 'failed', 'cancelled'],
     index: true
   },
   redemptionId: { type: String, index: true, maxlength: 256 },
