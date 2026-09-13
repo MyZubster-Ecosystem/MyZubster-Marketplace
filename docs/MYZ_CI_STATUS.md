@@ -10,4 +10,4 @@ Post-merge verification is complete only when all of the following have a real s
 
 Do not report the MYZ conversion/redemption stack as CI-green until those run records exist and their relevant jobs have completed successfully.
 
-A green result still proves software behavior only. It does not prove provider support, external MYZ settlement, legal authorization, custody approval, or production readiness.
+The staging gate intentionally uses `MYZ_ASSET_MODE=internal_credit`, disables the worker lease sweeper, and never loads live provider credentials. A green result proves software behavior only. It does not prove provider support, external MYZ settlement, legal authorization, custody approval, exchange status, or production readiness.
