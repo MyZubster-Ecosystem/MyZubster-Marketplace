@@ -90,6 +90,13 @@ class ConversionGatewayService {
       throw new ProviderUnavailableError('Configured provider did not return an executable quote');
     }
 
+    const expiresAt = new Date(providerQuote.expiresAt);
+    if (Number.isNaN(expiresAt.getTime()) || expiresAt.getTime() <= Date.now()) {
+      const error = new Error('Provider returned an invalid or expired quote');
+      error.code = 'INVALID_PROVIDER_QUOTE';
+      throw error;
+    }
+
     const providerFee = normalizeDecimal(providerQuote.providerFee || '0');
     const fees = applyMyZubsterFee(
       normalizeDecimal(providerQuote.grossRecipientAmount),
@@ -107,7 +114,7 @@ class ConversionGatewayService {
       myzubsterFee: fees.myzubsterFee,
       recipientAmount: fees.recipientAmount,
       feeBasisPoints: fees.feeBasisPoints,
-      expiresAt: String(providerQuote.expiresAt),
+      expiresAt: expiresAt.toISOString(),
       provider: String(providerQuote.provider || input.provider || 'external-provider'),
       executable: true,
       settlement: 'external_authorized_provider'
@@ -122,11 +129,13 @@ class ConversionGatewayService {
         from: quote.from,
         to: quote.to,
         amount: quote.amount,
+        rate: quote.rate,
         grossRecipientAmount: quote.grossRecipientAmount,
         providerFee: quote.providerFee,
         myzubsterFee: quote.myzubsterFee,
         recipientAmount: quote.recipientAmount,
-        feeBasisPoints: quote.feeBasisPoints
+        feeBasisPoints: quote.feeBasisPoints,
+        expiresAt
       });
     } catch (error) {
       const auditError = new Error('Quote audit storage unavailable');
@@ -154,6 +163,11 @@ class ConversionGatewayService {
     if (!issued) {
       const error = new Error('Quote not found for authenticated user');
       error.code = 'CONVERSION_QUOTE_NOT_FOUND';
+      throw error;
+    }
+    if (!issued.expiresAt || new Date(issued.expiresAt).getTime() <= Date.now()) {
+      const error = new Error('Quote has expired');
+      error.code = 'CONVERSION_QUOTE_EXPIRED';
       throw error;
     }
 
@@ -231,7 +245,7 @@ class ConversionGatewayService {
 
     return ConversionAudit.find({ quoteId: normalizedQuoteId, requestedBy: userId })
       .sort({ createdAt: 1 })
-      .select('-_id quoteId event provider from to amount grossRecipientAmount providerFee myzubsterFee recipientAmount feeBasisPoints providerTransactionId evidenceHash errorCode createdAt')
+      .select('-_id quoteId event provider from to amount rate grossRecipientAmount providerFee myzubsterFee recipientAmount feeBasisPoints expiresAt providerTransactionId evidenceHash errorCode createdAt')
       .lean();
   }
 }
