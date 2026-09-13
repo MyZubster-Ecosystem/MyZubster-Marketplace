@@ -2,6 +2,7 @@
 
 const MyzCanonicalLedgerEvidenceAdapter = require('./myzCanonicalLedgerEvidenceAdapter');
 const MyzProviderSettlementEvidenceAdapter = require('./myzProviderSettlementEvidenceAdapter');
+const MyzInFlightOperationEvidenceAdapter = require('./myzInFlightOperationEvidenceAdapter');
 
 function getCanonicalLedgerEvidenceAdapter() {
   if (process.env.MYZ_RECONCILIATION_LEDGER_EVIDENCE_ENABLED !== 'true') return null;
@@ -30,6 +31,18 @@ function getProviderSettlementEvidenceAdapter(report) {
   });
 }
 
+function getInFlightOperationEvidenceAdapter() {
+  if (process.env.MYZ_RECONCILIATION_INFLIGHT_EVIDENCE_ENABLED !== 'true') return null;
+  if (process.env.MYZ_RECONCILIATION_INFLIGHT_EVIDENCE_APPROVED !== 'true') return null;
+  if (!process.env.MYZ_RECONCILIATION_INFLIGHT_EVIDENCE_URL) return null;
+  return new MyzInFlightOperationEvidenceAdapter({
+    baseUrl: process.env.MYZ_RECONCILIATION_INFLIGHT_EVIDENCE_URL,
+    apiKey: process.env.MYZ_RECONCILIATION_INFLIGHT_EVIDENCE_API_KEY || null,
+    reviewed: true,
+    timeoutMs: process.env.MYZ_RECONCILIATION_INFLIGHT_EVIDENCE_TIMEOUT_MS || 8000
+  });
+}
+
 async function collectTrustedEvidence(report) {
   let trustedEvidence = {};
   const evidenceAdapters = [];
@@ -42,6 +55,10 @@ async function collectTrustedEvidence(report) {
     {
       source: 'provider-settlement-evidence',
       adapter: getProviderSettlementEvidenceAdapter(report)
+    },
+    {
+      source: 'myz-in-flight-operation-evidence',
+      adapter: getInFlightOperationEvidenceAdapter()
     }
   ];
 
@@ -74,5 +91,6 @@ async function collectTrustedEvidence(report) {
 module.exports = {
   getCanonicalLedgerEvidenceAdapter,
   getProviderSettlementEvidenceAdapter,
+  getInFlightOperationEvidenceAdapter,
   collectTrustedEvidence
 };
