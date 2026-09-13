@@ -18,6 +18,8 @@ function stableRevision(operation) {
     maxAttempts: operation?.maxAttempts ?? null,
     leaseExpiresAt: iso(operation?.leaseExpiresAt),
     nextRetryAt: iso(operation?.nextRetryAt),
+    providerTransactionId: operation?.providerTransactionId || null,
+    lastErrorCode: operation?.lastErrorCode || null,
     updatedAt: iso(operation?.updatedAt)
   });
   return crypto.createHash('sha256').update(payload).digest('hex');
@@ -87,7 +89,7 @@ class MyzWorkerOperationRegistryService {
     return operation.save();
   }
 
-  async markCompleted(operationId, owner) {
+  async markCompleted(operationId, owner, patch = {}) {
     const operation = await this.model.findOne({ operationId: String(operationId) });
     if (!operation || TERMINAL.has(operation.status)) return operation;
     if (operation.leaseOwner && String(operation.leaseOwner) !== String(owner || '')) return null;
@@ -96,6 +98,24 @@ class MyzWorkerOperationRegistryService {
     operation.leaseOwner = null;
     operation.leaseExpiresAt = null;
     operation.nextRetryAt = null;
+    operation.lastErrorCode = null;
+    if (patch.providerTransactionId) operation.providerTransactionId = String(patch.providerTransactionId);
+    if (patch.metadata && typeof patch.metadata === 'object') {
+      operation.metadata = { ...(operation.metadata || {}), ...patch.metadata };
+    }
+    return operation.save();
+  }
+
+  async markFailed(operationId, owner, errorCode = null) {
+    const operation = await this.model.findOne({ operationId: String(operationId) });
+    if (!operation || TERMINAL.has(operation.status)) return operation;
+    if (operation.leaseOwner && String(operation.leaseOwner) !== String(owner || '')) return null;
+    operation.status = 'failed';
+    operation.completedAt = this.now();
+    operation.leaseOwner = null;
+    operation.leaseExpiresAt = null;
+    operation.nextRetryAt = null;
+    operation.lastErrorCode = errorCode || null;
     return operation.save();
   }
 
