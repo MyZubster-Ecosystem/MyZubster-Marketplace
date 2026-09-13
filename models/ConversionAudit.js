@@ -13,11 +13,13 @@ const ConversionAuditSchema = new mongoose.Schema({
   from: { type: String, maxlength: 10 },
   to: { type: String, maxlength: 10 },
   amount: { type: String, maxlength: 64 },
+  rate: { type: String, maxlength: 64 },
   grossRecipientAmount: { type: String, maxlength: 64 },
   providerFee: { type: String, maxlength: 64 },
   myzubsterFee: { type: String, maxlength: 64 },
   recipientAmount: { type: String, maxlength: 64 },
   feeBasisPoints: { type: Number, min: 0, max: 10000 },
+  expiresAt: { type: Date },
   providerTransactionId: { type: String, maxlength: 256 },
   evidenceHash: { type: String, maxlength: 128 },
   errorCode: { type: String, maxlength: 100 }
