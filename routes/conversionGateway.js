@@ -2,9 +2,52 @@ const express = require('express');
 const router = express.Router();
 const authenticate = require('../middleware/auth');
 const { requireDatabaseReady } = require('../middleware/databaseReady');
+const { requireMyzReconciliationOperator } = require('../middleware/myzReconciliationOperatorAuth');
 const ConversionGatewayService = require('../services/conversionGatewayService');
 const MyzAssetIdentityService = require('../services/myzAssetIdentityService');
 const MyzRedemptionReconciliationService = require('../services/myzRedemptionReconciliationService');
+const MyzReconciliationReportService = require('../services/myzReconciliationReportService');
+
+// Operator reconciliation endpoints use a separate service/operator token rather than
+// end-user JWT authentication. They are intentionally read-only.
+router.get('/operator/reconciliation', requireDatabaseReady, requireMyzReconciliationOperator, async (req, res) => {
+  try {
+    const report = await MyzReconciliationReportService.buildReport({
+      limit: req.query.limit,
+      staleMinutes: req.query.staleMinutes
+    });
+    return res.json({ success: true, data: report });
+  } catch (error) {
+    return res.status(503).json({
+      success: false,
+      code: error.code || 'MYZ_RECONCILIATION_REPORT_UNAVAILABLE',
+      error: error.message
+    });
+  }
+});
+
+router.get('/operator/reconciliation/:redemptionId', requireDatabaseReady, requireMyzReconciliationOperator, async (req, res) => {
+  try {
+    const report = await MyzReconciliationReportService.getRedemptionReport(req.params.redemptionId, {
+      staleMinutes: req.query.staleMinutes
+    });
+    if (!report) {
+      return res.status(404).json({
+        success: false,
+        code: 'MYZ_RECONCILIATION_RECORD_NOT_FOUND',
+        error: 'No redemption or reservation record was found'
+      });
+    }
+    return res.json({ success: true, data: report });
+  } catch (error) {
+    const status = error.code === 'INVALID_MYZ_RECONCILIATION_REPORT_REQUEST' ? 400 : 503;
+    return res.status(status).json({
+      success: false,
+      code: error.code || 'MYZ_RECONCILIATION_REPORT_UNAVAILABLE',
+      error: error.message
+    });
+  }
+});
 
 router.use(authenticate, requireDatabaseReady);
 
