@@ -3,6 +3,7 @@ const assert = require('node:assert/strict');
 const gateway = require('../services/conversionGatewayService');
 const { applyMyZubsterFee, calculateFee } = require('../services/conversionFeeEngine');
 const HttpConversionProviderAdapter = require('../services/providers/httpConversionProviderAdapter');
+const CoinbaseAdvancedTradeCandidateAdapter = require('../services/providers/coinbaseAdvancedTradeCandidateAdapter');
 
 test('conversion gateway exposes supported assets', () => {
   assert.deepEqual(gateway.listSupportedAssets(), ['MYZ', 'EUR', 'USDC', 'XMR']);
@@ -43,4 +44,24 @@ test('HTTP provider adapter cannot be enabled without explicit approval', () => 
     () => new HttpConversionProviderAdapter({ baseUrl: 'https://provider.invalid', approved: false }),
     /explicitly approved/
   );
+});
+
+test('Coinbase candidate adapter refuses MYZ until an external asset mapping exists', () => {
+  const adapter = new CoinbaseAdvancedTradeCandidateAdapter();
+  assert.throws(
+    () => adapter.productId('MYZ', 'EUR'),
+    error => error.code === 'MYZ_EXTERNAL_ASSET_NOT_CONFIGURED'
+  );
+});
+
+test('Coinbase sandbox probe stays explicitly non-executable', async () => {
+  const adapter = new CoinbaseAdvancedTradeCandidateAdapter({
+    sandbox: true,
+    myzExternalAssetId: 'MYZ'
+  });
+  const result = await adapter.probePair({ from: 'MYZ', to: 'EUR' });
+  assert.equal(result.productId, 'MYZ-EUR');
+  assert.equal(result.supported, false);
+  assert.equal(result.executable, false);
+  assert.equal(result.reason, 'sandbox_static_responses_only');
 });
