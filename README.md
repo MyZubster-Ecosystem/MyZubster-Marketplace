@@ -22,13 +22,18 @@ Historical bounty labels or amounts in issues/commits are records of project int
 
 ## MYZ conversion gateway
 
-A fail-closed conversion gateway is under development for a future external-provider settlement model. It separates quote, provider fee, MyZubster service fee, settlement evidence and audit events.
+A fail-closed conversion gateway is under development for a future external-provider settlement model. It separates quote, provider fee, MyZubster service fee, settlement evidence, canonical MYZ accounting and audit events.
 
 Coinbase Advanced Trade is currently implemented only as a **technical candidate probe**. Candidate mode is non-executable and does not imply Coinbase supports MYZ. Live MYZ conversion remains blocked until MYZ has a real, reviewed external asset/settlement path and a provider supports that path.
+
+The branch also contains read-only operator reconciliation reporting plus fail-closed repair runbooks. Findings such as stale reservations, settled-but-unreconciled redemptions and canonical-debit mismatches carry evidence-first operator guidance. Every current runbook explicitly sets `automatedRepairAllowed=false`; no operator endpoint releases credit, retries settlement, writes/reverses canonical ledger entries or forces a reconciliation state.
 
 See:
 
 - [`docs/MYZ_CONVERSION_GATEWAY.md`](docs/MYZ_CONVERSION_GATEWAY.md)
+- [`docs/MYZ_REDEMPTION_RECONCILIATION.md`](docs/MYZ_REDEMPTION_RECONCILIATION.md)
+- [`docs/MYZ_RECONCILIATION_OPERATOR_REPORT.md`](docs/MYZ_RECONCILIATION_OPERATOR_REPORT.md)
+- [`docs/MYZ_RECONCILIATION_REPAIR_RUNBOOKS.md`](docs/MYZ_RECONCILIATION_REPAIR_RUNBOOKS.md)
 - [External MYZ settlement blocker #63](https://github.com/MyZubster-Ecosystem/MyZubster-Marketplace/issues/63)
 
 ## Current API areas
