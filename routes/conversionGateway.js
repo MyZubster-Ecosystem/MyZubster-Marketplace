@@ -4,6 +4,7 @@ const authenticate = require('../middleware/auth');
 const { requireDatabaseReady } = require('../middleware/databaseReady');
 const ConversionGatewayService = require('../services/conversionGatewayService');
 const MyzAssetIdentityService = require('../services/myzAssetIdentityService');
+const MyzRedemptionReconciliationService = require('../services/myzRedemptionReconciliationService');
 
 router.use(authenticate, requireDatabaseReady);
 
@@ -14,6 +15,7 @@ router.get('/capabilities', (req, res) => {
       supportedAssets: ConversionGatewayService.listSupportedAssets(),
       configuredProviders: ConversionGatewayService.listProviders(),
       candidateProviders: ConversionGatewayService.listCandidateProviders(),
+      redemptionProviders: MyzRedemptionReconciliationService.listProviders(),
       myz: MyzAssetIdentityService.getStatus(),
       executionMode: 'external_authorized_provider_only',
       custody: false,
@@ -74,6 +76,47 @@ router.post('/convert', async (req, res) => {
       success: false,
       error: error.message,
       code: error.code || 'CONVERSION_EXECUTION_UNAVAILABLE'
+    });
+  }
+});
+
+router.post('/redemption/start', async (req, res) => {
+  try {
+    const result = await MyzRedemptionReconciliationService.start(req.body || {}, { userId: req.user.id });
+    return res.status(202).json({ success: true, data: result });
+  } catch (error) {
+    const clientCodes = [
+      'MYZ_INTERNAL_CREDIT_ONLY',
+      'MYZ_SETTLEMENT_CONFIGURATION_INCOMPLETE',
+      'MYZ_REDEMPTION_MODE_REQUIRED',
+      'INVALID_MYZ_REDEMPTION_REQUEST',
+      'INVALID_MYZ_REDEMPTION_QUOTE'
+    ];
+    const status = clientCodes.includes(error.code) ? 400 : 503;
+    return res.status(status).json({
+      success: false,
+      error: error.message,
+      code: error.code || 'MYZ_REDEMPTION_UNAVAILABLE'
+    });
+  }
+});
+
+router.get('/redemption/:redemptionId', async (req, res) => {
+  try {
+    const result = await MyzRedemptionReconciliationService.getStatus(req.params.redemptionId, req.user.id);
+    if (!result) {
+      return res.status(404).json({
+        success: false,
+        error: 'Redemption not found for authenticated user',
+        code: 'MYZ_REDEMPTION_NOT_FOUND'
+      });
+    }
+    return res.json({ success: true, data: result });
+  } catch (error) {
+    return res.status(503).json({
+      success: false,
+      error: error.message,
+      code: error.code || 'MYZ_REDEMPTION_STATUS_UNAVAILABLE'
     });
   }
 });
