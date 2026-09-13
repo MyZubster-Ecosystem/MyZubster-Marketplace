@@ -4,6 +4,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const { classifyReconciliation, stateCounts } = require('../services/myzReconciliationReportService');
 const { getRunbook, listRunbooks, attachRunbook } = require('../services/myzReconciliationRunbookService');
+const { buildRepairPreview, findingPreview, isVerified } = require('../services/myzReconciliationRepairPreviewService');
 const { safeEqual } = require('../middleware/myzReconciliationOperatorAuth');
 
 const NOW = new Date('2026-09-13T03:00:00.000Z');
@@ -108,6 +109,64 @@ test('unknown findings remain untouched and cannot accidentally inherit a repair
   const finding = { severity: 'high', code: 'UNKNOWN_FUTURE_FINDING', message: 'future' };
   assert.deepEqual(attachRunbook(finding), finding);
   assert.equal(getRunbook('UNKNOWN_FUTURE_FINDING'), null);
+});
+
+test('repair preview for healthy reconciliation proposes no mutation', () => {
+  const report = {
+    redemption: redemption(),
+    reservation: reservation(),
+    assessment: { severity: 'ok', findings: [] }
+  };
+  const preview = buildRepairPreview(report);
+  assert.equal(preview.decision, 'WOULD_ALLOW_NO_ACTION');
+  assert.equal(preview.proposedAction, 'NO_REPAIR_REQUIRED');
+  assert.equal(preview.mutatesState, false);
+  assert.equal(preview.automatedRepairAllowed, false);
+});
+
+test('repair preview blocks stale reservation without independent evidence', () => {
+  const assessment = classifyReconciliation(
+    redemption({ state: 'settlement_requested', updatedAt: '2026-09-13T02:30:00.000Z' }),
+    reservation({ state: 'reserved', canonicalDebitEntryId: null, updatedAt: '2026-09-13T02:30:00.000Z' }),
+    { now: NOW, staleMinutes: 15 }
+  );
+  const preview = buildRepairPreview({
+    redemption: redemption({ state: 'settlement_requested' }),
+    reservation: reservation({ state: 'reserved', canonicalDebitEntryId: null }),
+    assessment
+  });
+  assert.equal(preview.decision, 'WOULD_BLOCK');
+  assert.equal(preview.mutatesState, false);
+  assert.ok(preview.missingEvidence.includes('providerSettlementStatus'));
+  assert.ok(preview.missingEvidence.includes('canonicalDebitStatus'));
+  assert.ok(preview.missingEvidence.includes('inFlightOperationStatus'));
+});
+
+test('repair preview only reaches WOULD_ALLOW_REVIEW with trusted, sourced, timestamped evidence', () => {
+  const finding = { code: 'STALE_RESERVATION', severity: 'medium', message: 'stale' };
+  const trustedEvidence = {
+    providerSettlementStatus: { verified: true, source: 'provider-adapter', checkedAt: NOW.toISOString(), status: 'none' },
+    canonicalDebitStatus: { verified: true, source: 'canonical-ledger-adapter', checkedAt: NOW.toISOString(), status: 'none' },
+    inFlightOperationStatus: { verified: true, source: 'worker-registry', checkedAt: NOW.toISOString(), status: 'none' }
+  };
+  const preview = findingPreview(finding, trustedEvidence);
+  assert.equal(preview.decision, 'WOULD_ALLOW_REVIEW');
+  assert.equal(preview.automatedRepairAllowed, false);
+  assert.deepEqual(preview.missingEvidence, []);
+});
+
+test('operator supplied booleans are not sufficient trusted evidence', () => {
+  assert.equal(isVerified(true), false);
+  assert.equal(isVerified({ verified: true }), false);
+  assert.equal(isVerified({ verified: true, source: 'provider' }), false);
+  assert.equal(isVerified({ verified: true, source: 'provider', checkedAt: NOW.toISOString() }), true);
+});
+
+test('unknown preview finding blocks rather than guessing an action', () => {
+  const preview = findingPreview({ code: 'UNKNOWN_FUTURE_FINDING' }, {});
+  assert.equal(preview.decision, 'WOULD_BLOCK');
+  assert.equal(preview.proposedAction, 'MANUAL_INVESTIGATION');
+  assert.deepEqual(preview.missingEvidence, ['reviewed_runbook']);
 });
 
 test('stateCounts returns deterministic per-state totals', () => {
