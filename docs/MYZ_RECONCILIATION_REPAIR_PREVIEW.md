@@ -34,7 +34,7 @@ WOULD_ALLOW_REVIEW
 
 `WOULD_ALLOW_NO_ACTION` means the current local reconciliation state is internally consistent and no repair is proposed.
 
-`WOULD_BLOCK` means one or more independent evidence requirements are missing. No repair should be designed or executed from the current information.
+`WOULD_BLOCK` means one or more independent evidence requirements are missing or a trusted evidence adapter could not verify the required condition.
 
 `WOULD_ALLOW_REVIEW` means all evidence requirements supplied to the preview engine by trusted internal adapters are verified, sourced and timestamped. It still does **not** execute a repair and does not grant authority to do so.
 
@@ -61,7 +61,46 @@ A trusted evidence object must be produced by an internal integration and includ
 }
 ```
 
-In v1, the HTTP endpoint intentionally supplies no such evidence adapters, so any state-changing repair preview remains `WOULD_BLOCK`. This is deliberate.
+## Trusted canonical MYZ ledger evidence
+
+The first trusted evidence adapter is read-only and queries the reviewed core MYZ ledger API. It is disabled unless both flags are explicit:
+
+```text
+MYZ_RECONCILIATION_LEDGER_EVIDENCE_ENABLED=true
+MYZ_RECONCILIATION_LEDGER_EVIDENCE_APPROVED=true
+```
+
+It reuses:
+
+```text
+MYZ_LEDGER_API_URL
+MYZ_LEDGER_API_KEY
+MYZ_LEDGER_API_TIMEOUT_MS
+```
+
+The core API provides a read-only lookup contract:
+
+```text
+GET /api/v1/myz/entries/lookup
+```
+
+using an authorized account plus immutable selectors such as canonical entry ID, redemption ID, idempotency key or provider transaction reference.
+
+The adapter can establish evidence keys including:
+
+```text
+canonicalDebitStatus
+canonicalDebitLookup
+canonicalDebitVerification
+canonicalDebitOrReversalStatus
+postDebitReversalStatus
+```
+
+The returned evidence includes the real canonical entry ID when found, recorded/reversed state, reversal entry reference and ledger revision. The Marketplace does not synthesize these values.
+
+A successful lookup that finds no debit can verify a **status check** such as `canonicalDebitStatus=not_found`, but it does not count as a verified debit identity for `canonicalDebitLookup` or `canonicalDebitVerification`.
+
+If the core evidence adapter is disabled or unavailable, the preview remains fail-closed and reports the adapter status without granting any repair path.
 
 ## Example: stale reservation
 
@@ -73,13 +112,7 @@ canonicalDebitStatus
 inFlightOperationStatus
 ```
 
-Without all three, the output remains:
-
-```text
-decision = WOULD_BLOCK
-proposedAction = REVIEW_RESERVATION_RELEASE
-automatedRepairAllowed = false
-```
+The canonical ledger adapter can now satisfy `canonicalDebitStatus` from the core ledger, but the preview still blocks until provider and in-flight evidence are also supplied by trusted adapters.
 
 The reservation age alone is never sufficient evidence for release.
 
@@ -92,7 +125,7 @@ providerSettlementVerification
 canonicalDebitStatus
 ```
 
-This prevents a repair path from releasing MYZ merely because local reconciliation stalled after an external payout.
+The canonical side can be verified automatically when the evidence adapter is enabled. Provider settlement still requires its own independent trusted evidence source.
 
 ## Unknown findings
 
@@ -108,13 +141,13 @@ The engine never guesses a repair policy for new failure classes.
 
 ## Non-mutation guarantee
 
-The preview service only transforms already-read reconciliation state and trusted evidence snapshots into a recommendation object. It has no write dependency on:
+The preview service and canonical evidence adapter use read-only queries. They cannot:
 
-- `MyzRedemption`;
-- `MyzLedgerReservation`;
-- the canonical ledger write API;
-- provider settlement execution;
-- provider reversal/refund APIs.
+- release a reservation;
+- write or reverse a canonical MYZ entry;
+- retry external settlement;
+- mark a redemption reconciled;
+- alter provider evidence.
 
 Every preview includes:
 
