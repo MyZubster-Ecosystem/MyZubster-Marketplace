@@ -5,6 +5,7 @@ const assert = require('node:assert/strict');
 const { classifyReconciliation, stateCounts } = require('../services/myzReconciliationReportService');
 const { getRunbook, listRunbooks, attachRunbook } = require('../services/myzReconciliationRunbookService');
 const { buildRepairPreview, findingPreview, isVerified } = require('../services/myzReconciliationRepairPreviewService');
+const MyzCanonicalLedgerEvidenceAdapter = require('../services/myzCanonicalLedgerEvidenceAdapter');
 const { safeEqual } = require('../middleware/myzReconciliationOperatorAuth');
 
 const NOW = new Date('2026-09-13T03:00:00.000Z');
@@ -23,6 +24,7 @@ function reservation(overrides = {}) {
   return {
     redemptionId: 'RED-1',
     reservationId: 'MYZR-1',
+    accountId: 'marketplace:user:alice',
     state: 'committed',
     canonicalDebitEntryId: 'MYZ-LEDGER-DEBIT-1',
     createdAt: '2026-09-13T02:50:00.000Z',
@@ -167,6 +169,78 @@ test('unknown preview finding blocks rather than guessing an action', () => {
   assert.equal(preview.decision, 'WOULD_BLOCK');
   assert.equal(preview.proposedAction, 'MANUAL_INVESTIGATION');
   assert.deepEqual(preview.missingEvidence, ['reviewed_runbook']);
+});
+
+test('canonical ledger evidence adapter verifies a recorded debit and reversal state from trusted API data', async () => {
+  const calls = [];
+  const httpClient = {
+    get: async (url, options) => {
+      calls.push({ url, options });
+      return { data: {
+        schema: 'myzubster-myz-ledger-lookup/v1',
+        asset: 'MYZ',
+        accountId: 'marketplace:user:alice',
+        revision: 'a'.repeat(64),
+        matched: 1,
+        entries: [{
+          entry_id: 'MYZ-LEDGER-DEBIT-1',
+          account_id: 'marketplace:user:alice',
+          amount_myz: '-25',
+          entry_type: 'ADJUSTMENT_DEBIT',
+          status: 'RECORDED',
+          reversed: false,
+          reversalEntryId: null,
+          reference: { redemption_id: 'RED-1', provider_transaction_id: 'P-TX-1' }
+        }]
+      } };
+    }
+  };
+  const adapter = new MyzCanonicalLedgerEvidenceAdapter({
+    baseUrl: 'http://core.test/api',
+    apiKey: 'service-token',
+    reviewed: true,
+    httpClient
+  });
+  const evidence = await adapter.collect({
+    redemption: redemption({ providerTransactionId: 'P-TX-1' }),
+    reservation: reservation()
+  });
+  assert.equal(evidence.canonicalDebitVerification.verified, true);
+  assert.equal(evidence.canonicalDebitVerification.status, 'recorded');
+  assert.equal(evidence.postDebitReversalStatus.status, 'not_reversed');
+  assert.equal(evidence.canonicalDebitLookup.entryId, 'MYZ-LEDGER-DEBIT-1');
+  assert.equal(calls[0].options.params.entryId, 'MYZ-LEDGER-DEBIT-1');
+  assert.equal(calls[0].options.headers.Authorization, 'Bearer service-token');
+});
+
+test('canonical ledger evidence adapter treats a completed lookup with no debit as known status but not verified debit identity', async () => {
+  const adapter = new MyzCanonicalLedgerEvidenceAdapter({
+    baseUrl: 'http://core.test/api',
+    reviewed: true,
+    httpClient: {
+      get: async () => ({ data: {
+        schema: 'myzubster-myz-ledger-lookup/v1',
+        asset: 'MYZ',
+        accountId: 'marketplace:user:alice',
+        revision: 'b'.repeat(64),
+        matched: 0,
+        entries: []
+      } })
+    }
+  });
+  const evidence = await adapter.collect({
+    redemption: redemption({ state: 'settlement_requested' }),
+    reservation: reservation({ state: 'reserved', canonicalDebitEntryId: null })
+  });
+  assert.equal(evidence.canonicalDebitStatus.verified, true);
+  assert.equal(evidence.canonicalDebitStatus.status, 'not_found');
+  assert.equal(evidence.canonicalDebitLookup.verified, false);
+  assert.equal(evidence.canonicalDebitVerification.verified, false);
+  assert.equal(evidence.postDebitReversalStatus.verified, false);
+});
+
+test('canonical ledger evidence adapter refuses activation without explicit review', () => {
+  assert.throws(() => new MyzCanonicalLedgerEvidenceAdapter({ baseUrl: 'http://core.test/api' }), /explicitly reviewed/);
 });
 
 test('stateCounts returns deterministic per-state totals', () => {
