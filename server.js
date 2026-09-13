@@ -3,6 +3,7 @@ const mongoose = require('mongoose');
 const cors = require('cors');
 const path = require('path');
 const { isDatabaseReady } = require('./middleware/databaseReady');
+const myzWorkerLeaseRecoverySweeper = require('./services/myzWorkerLeaseRecoverySweeperService');
 
 mongoose.set('bufferCommands', false);
 
@@ -43,6 +44,8 @@ const batchPaymentRoutes = require('./routes/batchPayment');
 const subscriptionRoutes = require('./routes/subscription');
 const fiatPaymentRoutes = require('./routes/fiatPayment');
 const urbanCleaningRoutes = require('./routes/urbanCleaning');
+const conversionGatewayRoutes = require('./routes/conversionGateway');
+const myzWorkerOperationRoutes = require('./routes/myzWorkerOperations');
 
 // Rotte API
 app.use('/api/auth', authRoutes);
@@ -73,6 +76,8 @@ app.use('/api/batch-payment', batchPaymentRoutes);
 app.use('/api/subscription', subscriptionRoutes);
 app.use('/api/fiat-payment', fiatPaymentRoutes);
 app.use('/api/urban-cleaning', urbanCleaningRoutes);
+app.use('/api/conversion', conversionGatewayRoutes);
+app.use('/api/operations', myzWorkerOperationRoutes);
 
 // Health check
 app.get('/api/health', (req, res) => {
@@ -184,10 +189,14 @@ async function startServer(options = {}) {
         console.log(`✅ Readiness: http://localhost:${port}/api/ready`);
     });
     setupWebSocket(server);
+    server.on('close', () => myzWorkerLeaseRecoverySweeper.stop());
 
     try {
         await mongoose.connect(mongoUri, { serverSelectionTimeoutMS });
         console.log('✅ MongoDB connesso');
+        if (myzWorkerLeaseRecoverySweeper.start()) {
+            console.log('🛡️ MYZ worker lease recovery sweeper enabled');
+        }
     } catch (error) {
         console.error('❌ MongoDB non disponibile; auth e pagamenti restano bloccati:', error.message);
     }

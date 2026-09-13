@@ -1,0 +1,54 @@
+name: MYZ cross-repo contract
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    services:
+      mongo:
+        image: mongo:7
+        ports:
+          - 27017:27017
+        options: >-
+          --health-cmd "mongosh --quiet --eval 'db.runCommand({ ping: 1 }).ok'"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - name: Checkout Marketplace branch
+        uses: actions/checkout@v4
+
+      - name: Checkout core MYZ ledger branch
+        uses: actions/checkout@v4
+        with:
+          repository: MyZubster-Ecosystem/myzubster
+          ref: feature/myz-ledger-api
+          path: core-myzubster
+
+      - name: Use Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - name: Install Marketplace dependencies
+        run: npm ci
+
+      - name: Install core dependencies
+        working-directory: core-myzubster
+        run: npm ci
+
+      - name: Run MYZ cross-repo vertical slice
+        env:
+          NODE_ENV: test
+          MONGODB_URI: mongodb://127.0.0.1:27017/myzubster_cross_repo_contract
+          MYZ_CORE_DIR: ${{ github.workspace }}/core-myzubster
+        run: node --test tests/myzCrossRepo.contract.test.js

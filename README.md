@@ -20,6 +20,22 @@ Payment batches and subscriptions are stored in MongoDB and scoped to the authen
 
 Historical bounty labels or amounts in issues/commits are records of project intent/work tracking. They are **not proof that an external XMR/MYZ settlement occurred**.
 
+## MYZ conversion gateway
+
+A fail-closed conversion gateway is under development for a future external-provider settlement model. It separates quote, provider fee, MyZubster service fee, settlement evidence and audit events.
+
+Coinbase Advanced Trade is currently implemented only as a **technical candidate probe**. Candidate mode is non-executable and does not imply Coinbase supports MYZ. Live MYZ conversion remains blocked until MYZ has a real, reviewed external asset/settlement path and a provider supports that path.
+
+The branch also includes read-only operator reconciliation tooling, reviewed repair runbooks, and a fail-closed repair preview endpoint that reports `WOULD_BLOCK`, `WOULD_ALLOW_REVIEW`, or `WOULD_ALLOW_NO_ACTION` without mutating MYZ, reservations, provider settlement, or canonical ledger state.
+
+See:
+
+- [`docs/MYZ_CONVERSION_GATEWAY.md`](docs/MYZ_CONVERSION_GATEWAY.md)
+- [`docs/MYZ_RECONCILIATION_OPERATOR_REPORT.md`](docs/MYZ_RECONCILIATION_OPERATOR_REPORT.md)
+- [`docs/MYZ_RECONCILIATION_REPAIR_RUNBOOKS.md`](docs/MYZ_RECONCILIATION_REPAIR_RUNBOOKS.md)
+- [`docs/MYZ_RECONCILIATION_REPAIR_PREVIEW.md`](docs/MYZ_RECONCILIATION_REPAIR_PREVIEW.md)
+- [External MYZ settlement blocker #63](https://github.com/MyZubster-Ecosystem/MyZubster-Marketplace/issues/63)
+
 ## Current API areas
 
 ### Gardens
