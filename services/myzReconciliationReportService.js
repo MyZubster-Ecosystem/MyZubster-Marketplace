@@ -79,6 +79,44 @@ function stateCounts(records = []) {
   }, {});
 }
 
+function operatorRedemptionView(redemption) {
+  if (!redemption) return null;
+  return {
+    redemptionId: redemption.redemptionId,
+    quoteId: redemption.quoteId,
+    provider: redemption.provider,
+    fromAmount: redemption.fromAmount,
+    toAsset: redemption.toAsset,
+    expectedRecipientAmount: redemption.expectedRecipientAmount,
+    state: redemption.state,
+    reservationId: redemption.reservationId || null,
+    providerTransactionId: redemption.providerTransactionId || null,
+    evidenceHash: redemption.evidenceHash || null,
+    failureCode: redemption.failureCode || null,
+    reconciliationNote: redemption.reconciliationNote || null,
+    createdAt: redemption.createdAt,
+    updatedAt: redemption.updatedAt
+  };
+}
+
+function operatorReservationView(reservation) {
+  if (!reservation) return null;
+  return {
+    reservationId: reservation.reservationId,
+    redemptionId: reservation.redemptionId,
+    accountId: reservation.accountId,
+    amountMyz: reservation.amountMyz,
+    state: reservation.state,
+    canonicalBalanceAtReserve: reservation.canonicalBalanceAtReserve || null,
+    canonicalLedgerRevision: reservation.canonicalLedgerRevision || null,
+    canonicalDebitEntryId: reservation.canonicalDebitEntryId || null,
+    releaseReason: reservation.releaseReason || null,
+    failureCode: reservation.failureCode || null,
+    createdAt: reservation.createdAt,
+    updatedAt: reservation.updatedAt
+  };
+}
+
 class MyzReconciliationReportService {
   async buildReport(options = {}) {
     const limit = Math.min(Math.max(Number(options.limit || 100), 1), 500);
@@ -177,8 +215,8 @@ class MyzReconciliationReportService {
 
     const staleMinutes = Math.min(Math.max(Number(options.staleMinutes || 15), 1), 10080);
     return {
-      redemption,
-      reservation,
+      redemption: operatorRedemptionView(redemption),
+      reservation: operatorReservationView(reservation),
       assessment: classifyReconciliation(redemption, reservation, { staleMinutes, now: new Date() })
     };
   }
@@ -188,3 +226,5 @@ module.exports = new MyzReconciliationReportService();
 module.exports.MyzReconciliationReportService = MyzReconciliationReportService;
 module.exports.classifyReconciliation = classifyReconciliation;
 module.exports.stateCounts = stateCounts;
+module.exports.operatorRedemptionView = operatorRedemptionView;
+module.exports.operatorReservationView = operatorReservationView;
