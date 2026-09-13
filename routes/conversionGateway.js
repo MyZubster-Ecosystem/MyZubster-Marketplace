@@ -12,11 +12,30 @@ router.get('/capabilities', (req, res) => {
     data: {
       supportedAssets: ConversionGatewayService.listSupportedAssets(),
       configuredProviders: ConversionGatewayService.listProviders(),
+      candidateProviders: ConversionGatewayService.listCandidateProviders(),
       executionMode: 'external_authorized_provider_only',
       custody: false,
       internalExchange: false
     }
   });
+});
+
+router.post('/provider-probe', async (req, res) => {
+  try {
+    const result = await ConversionGatewayService.probeCandidateProvider(req.body || {});
+    return res.json({ success: true, data: result });
+  } catch (error) {
+    const providerUnavailable = [
+      'CANDIDATE_PROVIDER_UNAVAILABLE',
+      'PROVIDER_PAIR_UNSUPPORTED',
+      'PROVIDER_SANDBOX_MARKET_DATA_UNAVAILABLE'
+    ].includes(error.code);
+    return res.status(providerUnavailable ? 503 : 400).json({
+      success: false,
+      error: error.message,
+      code: error.code || 'CANDIDATE_PROVIDER_PROBE_FAILED'
+    });
+  }
 });
 
 router.post('/quote', async (req, res) => {
