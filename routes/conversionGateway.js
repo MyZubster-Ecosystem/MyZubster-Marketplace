@@ -8,6 +8,7 @@ const MyzAssetIdentityService = require('../services/myzAssetIdentityService');
 const MyzRedemptionReconciliationService = require('../services/myzRedemptionReconciliationService');
 const MyzReconciliationReportService = require('../services/myzReconciliationReportService');
 const { listRunbooks, getRunbook } = require('../services/myzReconciliationRunbookService');
+const { buildRepairPreview } = require('../services/myzReconciliationRepairPreviewService');
 
 // Operator reconciliation endpoints use a separate service/operator token rather than
 // end-user JWT authentication. They are intentionally read-only.
@@ -41,6 +42,32 @@ router.get('/operator/reconciliation/runbooks/:code', requireDatabaseReady, requ
     });
   }
   return res.json({ success: true, data: runbook });
+});
+
+router.get('/operator/reconciliation/:redemptionId/repair-preview', requireDatabaseReady, requireMyzReconciliationOperator, async (req, res) => {
+  try {
+    const report = await MyzReconciliationReportService.getRedemptionReport(req.params.redemptionId, {
+      staleMinutes: req.query.staleMinutes
+    });
+    if (!report) {
+      return res.status(404).json({
+        success: false,
+        code: 'MYZ_RECONCILIATION_RECORD_NOT_FOUND',
+        error: 'No redemption or reservation record was found'
+      });
+    }
+    // v1 intentionally supplies no operator-provided evidence. Only trusted internal
+    // evidence adapters may satisfy repair prerequisites in a future revision.
+    const preview = buildRepairPreview(report);
+    return res.json({ success: true, data: preview });
+  } catch (error) {
+    const status = error.code === 'INVALID_MYZ_REPAIR_PREVIEW_REQUEST' ? 400 : 503;
+    return res.status(status).json({
+      success: false,
+      code: error.code || 'MYZ_REPAIR_PREVIEW_UNAVAILABLE',
+      error: error.message
+    });
+  }
 });
 
 router.get('/operator/reconciliation/:redemptionId', requireDatabaseReady, requireMyzReconciliationOperator, async (req, res) => {
