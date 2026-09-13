@@ -1,0 +1,107 @@
+name: MYZ staging end-to-end
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'services/**'
+      - 'models/**'
+      - 'routes/**'
+      - 'middleware/**'
+      - 'scripts/myz-staging-e2e-smoke.js'
+      - 'tests/**'
+      - '.github/workflows/myz-staging-e2e.yml'
+      - '.github/workflows/myz-cross-repo-contract.yml'
+  workflow_dispatch:
+    inputs:
+      core_ref:
+        description: 'Canonical myzubster ref to test against'
+        required: false
+        default: 'main'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: myz-staging-e2e-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_ENV: test
+  CI: true
+  MONGODB_URI: mongodb://127.0.0.1:27017/myzubster_staging_e2e
+  JWT_SECRET: staging-ci-only-not-production
+  MYZ_ASSET_MODE: internal_credit
+  MYZ_WORKER_LEASE_SWEEPER_ENABLED: 'false'
+
+jobs:
+  staging-e2e:
+    name: MYZ staging vertical slice
+    runs-on: ubuntu-latest
+    services:
+      mongo:
+        image: mongo:7
+        ports:
+          - 27017:27017
+        options: >-
+          --health-cmd "mongosh --quiet --eval 'db.runCommand({ ping: 1 }).ok'"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - name: Checkout Marketplace
+        uses: actions/checkout@v4
+
+      - name: Checkout canonical MYZ core
+        uses: actions/checkout@v4
+        with:
+          repository: MyZubster-Ecosystem/myzubster
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.core_ref || 'main' }}
+          path: core-myzubster
+
+      - name: Use Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - name: Install Marketplace dependencies
+        run: npm ci
+
+      - name: Install core dependencies
+        working-directory: core-myzubster
+        run: npm ci
+
+      - name: Verify canonical ledger fixture
+        working-directory: core-myzubster
+        run: node myz/verify-ledger.mjs
+
+      - name: Run dedicated core MYZ ledger tests
+        working-directory: core-myzubster
+        run: npx jest tests/myzLedgerApiService.test.js tests/myzLedgerApiRoutes.test.js --runInBand
+
+      - name: Run Marketplace MYZ unit and reconciliation tests
+        run: >-
+          node --test
+          tests/conversionGateway.node.test.js
+          tests/myzReconciliationReport.node.test.js
+          tests/myzProviderEvidence.node.test.js
+          tests/myzInFlightOperationEvidence.node.test.js
+          tests/myzWorkerRegistry.node.test.js
+          tests/myzRedemptionSettlementWorker.node.test.js
+          tests/myzWorkerLeaseRecovery.node.test.js
+
+      - name: Run cross-repo MYZ vertical slice
+        env:
+          MYZ_CORE_DIR: ${{ github.workspace }}/core-myzubster
+        run: node --test tests/myzCrossRepo.contract.test.js
+
+      - name: Run staging safety smoke marker
+        run: node scripts/myz-staging-e2e-smoke.js
+
+      - name: Staging safety assertion
+        run: |
+          test "$MYZ_ASSET_MODE" = "internal_credit"
+          test "$MYZ_WORKER_LEASE_SWEEPER_ENABLED" = "false"
+          echo "Staging gate is test-only: no live provider or external MYZ settlement enabled."

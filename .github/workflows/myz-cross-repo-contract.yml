@@ -1,12 +1,35 @@
 name: MYZ cross-repo contract
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - 'services/**'
+      - 'models/**'
+      - 'routes/**'
+      - 'tests/myzCrossRepo.contract.test.js'
+      - '.github/workflows/myz-cross-repo-contract.yml'
   pull_request:
     branches: [main]
+    paths:
+      - 'services/**'
+      - 'models/**'
+      - 'routes/**'
+      - 'tests/myzCrossRepo.contract.test.js'
+      - '.github/workflows/myz-cross-repo-contract.yml'
   workflow_dispatch:
+    inputs:
+      core_ref:
+        description: 'Core myzubster ref to test against'
+        required: false
+        default: 'main'
 
 permissions:
   contents: read
+
+concurrency:
+  group: myz-cross-repo-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   contract:
@@ -23,14 +46,14 @@ jobs:
           --health-retries 10
 
     steps:
-      - name: Checkout Marketplace branch
+      - name: Checkout Marketplace
         uses: actions/checkout@v4
 
-      - name: Checkout core MYZ ledger branch
+      - name: Checkout canonical core MYZ ledger
         uses: actions/checkout@v4
         with:
           repository: MyZubster-Ecosystem/myzubster
-          ref: feature/myz-ledger-api
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.core_ref || 'main' }}
           path: core-myzubster
 
       - name: Use Node.js 24
@@ -45,6 +68,10 @@ jobs:
       - name: Install core dependencies
         working-directory: core-myzubster
         run: npm ci
+
+      - name: Run core MYZ ledger contract tests
+        working-directory: core-myzubster
+        run: npx jest tests/myzLedgerApiService.test.js tests/myzLedgerApiRoutes.test.js --runInBand
 
       - name: Run MYZ cross-repo vertical slice
         env:
