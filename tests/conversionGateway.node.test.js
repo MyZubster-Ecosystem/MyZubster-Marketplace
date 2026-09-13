@@ -4,6 +4,7 @@ const gateway = require('../services/conversionGatewayService');
 const { applyMyZubsterFee, calculateFee } = require('../services/conversionFeeEngine');
 const HttpConversionProviderAdapter = require('../services/providers/httpConversionProviderAdapter');
 const CoinbaseAdvancedTradeCandidateAdapter = require('../services/providers/coinbaseAdvancedTradeCandidateAdapter');
+const { MyzAssetIdentityService } = require('../services/myzAssetIdentityService');
 
 test('conversion gateway exposes supported assets', () => {
   assert.deepEqual(gateway.listSupportedAssets(), ['MYZ', 'EUR', 'USDC', 'XMR']);
@@ -64,4 +65,49 @@ test('Coinbase sandbox probe stays explicitly non-executable', async () => {
   assert.equal(result.supported, false);
   assert.equal(result.executable, false);
   assert.equal(result.reason, 'sandbox_static_responses_only');
+});
+
+test('MYZ defaults to internal credit and cannot be treated as externally tradable', () => {
+  const identity = new MyzAssetIdentityService({});
+  const status = identity.getStatus();
+  assert.equal(status.mode, 'internal_credit');
+  assert.equal(status.externallyTradable, false);
+  assert.equal(status.ready, true);
+  assert.equal(status.legalAuthorizationImplied, false);
+  assert.throws(
+    () => identity.assertReadyForExternalUse(),
+    error => error.code === 'MYZ_INTERNAL_CREDIT_ONLY'
+  );
+});
+
+test('redemption bridge requires an explicit rail identifier', () => {
+  const incomplete = new MyzAssetIdentityService({ MYZ_ASSET_MODE: 'redemption_bridge' });
+  assert.equal(incomplete.getStatus().ready, false);
+  assert.deepEqual(incomplete.getStatus().missingRequirements, ['MYZ_REDEMPTION_RAIL']);
+
+  const complete = new MyzAssetIdentityService({
+    MYZ_ASSET_MODE: 'redemption_bridge',
+    MYZ_REDEMPTION_RAIL: 'reviewed-provider-contract-v1'
+  });
+  assert.equal(complete.getStatus().redemptionConfigured, true);
+  assert.equal(complete.assertReadyForExternalUse().mode, 'redemption_bridge');
+});
+
+test('external MYZ asset mode requires network and asset identifier', () => {
+  const incomplete = new MyzAssetIdentityService({
+    MYZ_ASSET_MODE: 'external_asset',
+    CONVERSION_MYZ_EXTERNAL_ASSET_ID: 'MYZ'
+  });
+  assert.equal(incomplete.getStatus().ready, false);
+  assert.deepEqual(incomplete.getStatus().missingRequirements, ['MYZ_EXTERNAL_NETWORK']);
+
+  const complete = new MyzAssetIdentityService({
+    MYZ_ASSET_MODE: 'external_asset',
+    CONVERSION_MYZ_EXTERNAL_ASSET_ID: 'asset-123',
+    MYZ_EXTERNAL_NETWORK: 'example-network'
+  });
+  const status = complete.assertReadyForExternalUse();
+  assert.equal(status.externallyTradable, true);
+  assert.equal(status.externalAssetId, 'asset-123');
+  assert.equal(status.network, 'example-network');
 });
