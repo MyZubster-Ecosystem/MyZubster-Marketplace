@@ -43,6 +43,7 @@ const batchPaymentRoutes = require('./routes/batchPayment');
 const subscriptionRoutes = require('./routes/subscription');
 const fiatPaymentRoutes = require('./routes/fiatPayment');
 const urbanCleaningRoutes = require('./routes/urbanCleaning');
+const conversionGatewayRoutes = require('./routes/conversionGateway');
 
 // Rotte API
 app.use('/api/auth', authRoutes);
@@ -73,6 +74,7 @@ app.use('/api/batch-payment', batchPaymentRoutes);
 app.use('/api/subscription', subscriptionRoutes);
 app.use('/api/fiat-payment', fiatPaymentRoutes);
 app.use('/api/urban-cleaning', urbanCleaningRoutes);
+app.use('/api/conversion', conversionGatewayRoutes);
 
 // Health check
 app.get('/api/health', (req, res) => {
