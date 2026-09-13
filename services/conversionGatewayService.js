@@ -220,6 +220,20 @@ class ConversionGatewayService {
       throw error;
     }
   }
+
+  async getAuditTrail(quoteId, userId) {
+    const normalizedQuoteId = String(quoteId || '').trim();
+    if (!normalizedQuoteId) {
+      const error = new Error('quoteId is required');
+      error.code = 'INVALID_CONVERSION_REQUEST';
+      throw error;
+    }
+
+    return ConversionAudit.find({ quoteId: normalizedQuoteId, requestedBy: userId })
+      .sort({ createdAt: 1 })
+      .select('-_id quoteId event provider from to amount grossRecipientAmount providerFee myzubsterFee recipientAmount feeBasisPoints providerTransactionId evidenceHash errorCode createdAt')
+      .lean();
+  }
 }
 
 module.exports = new ConversionGatewayService();
