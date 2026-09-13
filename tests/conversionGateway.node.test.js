@@ -6,6 +6,7 @@ const HttpConversionProviderAdapter = require('../services/providers/httpConvers
 const CoinbaseAdvancedTradeCandidateAdapter = require('../services/providers/coinbaseAdvancedTradeCandidateAdapter');
 const MyzRedemptionProviderContract = require('../services/providers/myzRedemptionProviderContract');
 const { MyzAssetIdentityService } = require('../services/myzAssetIdentityService');
+const { MyzRedemptionReconciliationService } = require('../services/myzRedemptionReconciliationService');
 
 test('conversion gateway exposes supported assets', () => {
   assert.deepEqual(gateway.listSupportedAssets(), ['MYZ', 'EUR', 'USDC', 'XMR']);
@@ -143,4 +144,29 @@ test('redemption provider contract validates quote and settlement evidence', () 
   });
   assert.equal(evidence.providerTransactionId, 'tx-1');
   assert.equal(evidence.toAsset, 'EUR');
+});
+
+test('redemption reconciliation state machine allows only ordered transitions', () => {
+  const service = new MyzRedemptionReconciliationService();
+  assert.equal(service.assertTransition('quote_accepted', 'credit_reserved'), true);
+  assert.equal(service.assertTransition('credit_reserved', 'settlement_requested'), true);
+  assert.equal(service.assertTransition('settlement_requested', 'settled'), true);
+  assert.equal(service.assertTransition('settled', 'reconciled'), true);
+
+  assert.throws(
+    () => service.assertTransition('quote_accepted', 'settled'),
+    error => error.code === 'INVALID_MYZ_REDEMPTION_TRANSITION'
+  );
+  assert.throws(
+    () => service.assertTransition('reconciled', 'rolled_back'),
+    error => error.code === 'INVALID_MYZ_REDEMPTION_TRANSITION'
+  );
+});
+
+test('redemption reconciliation refuses incomplete provider adapters', () => {
+  const service = new MyzRedemptionReconciliationService();
+  assert.throws(
+    () => service.registerProvider('broken-provider', { getRedemptionQuote() {} }),
+    /missing methods/
+  );
 });
