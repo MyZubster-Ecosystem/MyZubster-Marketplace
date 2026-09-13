@@ -2,6 +2,7 @@ const crypto = require('crypto');
 const MyzRedemption = require('../models/MyzRedemption');
 const myzAssetIdentityService = require('./myzAssetIdentityService');
 const MyzInternalLedgerAdapter = require('./myzInternalLedgerAdapter');
+const MyzRedemptionSettlementWorkerService = require('./myzRedemptionSettlementWorkerService');
 
 const ALLOWED_TRANSITIONS = Object.freeze({
   quote_accepted: ['credit_reserved', 'failed'],
@@ -33,6 +34,7 @@ class MyzRedemptionReconciliationService {
   constructor(options = {}) {
     this.providers = new Map();
     this.ledgerAdapter = options.ledgerAdapter || null;
+    this.settlementWorker = options.settlementWorker || MyzRedemptionSettlementWorkerService;
     if (!options.skipEnvConfiguration) this.configureLedgerAdapterFromEnv();
   }
 
@@ -60,6 +62,11 @@ class MyzRedemptionReconciliationService {
 
   getLedgerAdapter() {
     return this.ledgerAdapter;
+  }
+
+  registerSettlementWorker(worker) {
+    if (!worker || typeof worker.run !== 'function') throw new TypeError('MYZ settlement worker must expose run()');
+    this.settlementWorker = worker;
   }
 
   registerProvider(name, provider) {
@@ -170,7 +177,9 @@ class MyzRedemptionReconciliationService {
       await this.transition(record, 'credit_reserved', { reservationId: String(reservation.reservationId) });
       await this.transition(record, 'settlement_requested');
 
-      const rawSettlement = await provider.executeExternalSettlement({
+      const workerResult = await this.settlementWorker.run({
+        provider,
+        providerName: quote.provider,
         redemptionId,
         quoteId: quote.quoteId,
         reservationId: record.reservationId,
@@ -179,7 +188,7 @@ class MyzRedemptionReconciliationService {
         requestedBy,
         idempotencyKey
       });
-      const settlement = provider.validateSettlementEvidence(rawSettlement);
+      const settlement = workerResult.settlement;
       const evidenceHash = crypto.createHash('sha256')
         .update(JSON.stringify(settlement.evidence || {
           providerTransactionId: settlement.providerTransactionId,
@@ -239,9 +248,6 @@ class MyzRedemptionReconciliationService {
       });
     } catch (error) {
       if (record && record.state === 'settled' && debitCommitAttempted) {
-        // Once a canonical debit request has been sent, a timeout/ambiguous response must
-        // never restore the reserved credit automatically. Manual/core-ledger reconciliation
-        // is required to avoid double-spend or double-credit outcomes.
         try {
           await this.transition(record, 'failed', {
             failureCode: error.code || 'MYZ_LEDGER_COMMIT_AMBIGUOUS',
@@ -273,9 +279,6 @@ class MyzRedemptionReconciliationService {
           await this.transition(record, 'failed', { failureCode: error.code || 'MYZ_REDEMPTION_FAILED' });
         } catch (_) {}
       } else if (record && record.state === 'settled' && record.reservationId) {
-        // Settlement is externally evidenced but no canonical debit has been attempted yet.
-        // Release is only safe when provider reconciliation explicitly rejected the match;
-        // generic failures here require manual investigation.
         try {
           await this.transition(record, 'failed', {
             failureCode: error.code || 'MYZ_REDEMPTION_POST_SETTLEMENT_FAILURE',
